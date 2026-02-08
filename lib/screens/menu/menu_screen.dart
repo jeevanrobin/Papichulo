@@ -134,6 +134,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                                 return _MenuItem(
                                   item: item,
                                   cartProvider: context.read<CartProvider>(),
+                                  cartIconKey: _cartIconKey,
                                 );
                               },
                             ),
@@ -199,10 +200,12 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
 class _MenuItem extends StatefulWidget {
   final item;
   final CartProvider cartProvider;
+  final GlobalKey cartIconKey;
 
   _MenuItem({
     required this.item,
     required this.cartProvider,
+    required this.cartIconKey,
   });
 
   @override
@@ -326,7 +329,7 @@ class _MenuItemState extends State<_MenuItem> with SingleTickerProviderStateMixi
                         ),
                         FlyToCartButton(
                           item: widget.item,
-                          cartIconKey: _cartIconKey,
+                          cartIconKey: widget.cartIconKey,
                           isCompact: true,
                         ),
                       ],
