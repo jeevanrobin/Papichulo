@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../my-portfolio"
+		},
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../Food App"
+		}
+	],
+	"settings": {
+		"powershell.cwd": "papichulo"
+	}
+}
