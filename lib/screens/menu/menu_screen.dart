@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../data/menu_data.dart';
 import '../../providers/cart_provider.dart';
+import '../../services/analytics_service.dart';
 import '../../widgets/fly_to_cart_button.dart';
 import '../../widgets/animated_cart_icon.dart';
 import '../cart/cart_drawer.dart';
@@ -18,7 +19,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
   static const Color darkGold = Color(0xFFB8860B);
   static const Color black = Color(0xFF000000);
   static const Color darkGrey = Color(0xFF1A1A1A);
-  
+
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
   late GlobalKey _cartIconKey;
@@ -26,6 +27,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    AnalyticsService().track('page_view', params: {'screen': 'menu'});
     _cartIconKey = GlobalKey();
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 500),
@@ -35,7 +37,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
       begin: const Offset(0, 0.5),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
-    
+
     _slideController.forward();
   }
 
@@ -80,6 +82,15 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _DottedPatternPainter(dotColor: Colors.black.withOpacity(0.03)),
+              ),
+            ),
+          ),
+          const Positioned(top: 14, left: 12, child: _DecorCircle(size: 34, color: Color(0x22FFD700))),
+          const Positioned(top: 76, right: 18, child: _DecorSquiggle(color: Color(0x448B5E00))),
           SlideTransition(
             position: _slideAnimation,
             child: SafeArea(
@@ -91,32 +102,47 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                     children: categories.map((category) {
                       final items = papichuloMenu.where((item) => item.category == category).toList();
                       if (items.isEmpty) return const SizedBox.shrink();
-                      
+
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 32),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(colors: [goldYellow, darkGold]),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: goldYellow.withOpacity(0.3),
-                                    blurRadius: 10,
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(colors: [goldYellow, darkGold]),
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: goldYellow.withOpacity(0.3),
+                                        blurRadius: 10,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: Text(
-                                category.toUpperCase(),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
+                                  child: Text(
+                                    category.toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                const Positioned(
+                                  right: -12,
+                                  top: -8,
+                                  child: _DecorCircle(size: 14, color: Color(0x33FFD700)),
+                                ),
+                                const Positioned(
+                                  right: -24,
+                                  bottom: -8,
+                                  child: _DecorCircle(size: 9, color: Color(0x338B5E00)),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 16),
                             GridView.builder(
@@ -194,15 +220,14 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
       ),
     );
   }
-
 }
 
 class _MenuItem extends StatefulWidget {
-  final item;
+  final dynamic item;
   final CartProvider cartProvider;
   final GlobalKey cartIconKey;
 
-  _MenuItem({
+  const _MenuItem({
     required this.item,
     required this.cartProvider,
     required this.cartIconKey,
@@ -212,11 +237,10 @@ class _MenuItem extends StatefulWidget {
   State<_MenuItem> createState() => _MenuItemState();
 }
 
-class _MenuItemState extends State<_MenuItem> with SingleTickerProviderStateMixin {
+class _MenuItemState extends State<_MenuItem> {
   static const Color goldYellow = Color(0xFFFFD700);
   static const Color darkGold = Color(0xFFB8860B);
-  static const Color black = Color(0xFF000000);
-  
+
   bool _isHovered = false;
 
   @override
@@ -243,104 +267,191 @@ class _MenuItemState extends State<_MenuItem> with SingleTickerProviderStateMixi
           ),
           boxShadow: [
             BoxShadow(
-              color: _isHovered
-                  ? goldYellow.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.05),
+              color: _isHovered ? goldYellow.withOpacity(0.3) : Colors.black.withOpacity(0.05),
               blurRadius: _isHovered ? 15 : 8,
               offset: const Offset(0, 5),
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: Container(
-                height: 130,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [goldYellow.withOpacity(0.1), Colors.transparent],
+            const Positioned(top: 8, right: 8, child: _DecorCircle(size: 10, color: Color(0x22FFD700))),
+            const Positioned(top: 18, right: 24, child: _DecorCircle(size: 6, color: Color(0x228B5E00))),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  child: Container(
+                    height: 130,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [goldYellow.withOpacity(0.1), Colors.transparent],
+                      ),
+                    ),
+                    child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
+                        ? Image.network(
+                            widget.item.imageUrl!,
+                            fit: BoxFit.cover,
+                            cacheHeight: 130,
+                            cacheWidth: 220,
+                            filterQuality: FilterQuality.low,
+                            errorBuilder: (_, __, ___) => const Center(
+                              child: Icon(Icons.fastfood, size: 40, color: Colors.grey),
+                            ),
+                          )
+                        : const Center(
+                            child: Icon(Icons.fastfood, size: 40, color: Colors.grey),
+                          ),
                   ),
                 ),
-                child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
-                    ? Image.network(
-                        widget.item.imageUrl!,
-                        fit: BoxFit.cover,
-                        cacheHeight: 130,
-                        cacheWidth: 220,
-                        filterQuality: FilterQuality.low,
-                        errorBuilder: (_, __, ___) => const Center(
-                          child: Icon(Icons.fastfood, size: 40, color: Colors.grey),
-                        ),
-                      )
-                    : const Center(
-                        child: Icon(Icons.fastfood, size: 40, color: Colors.grey),
-                      ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.item.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.item.category,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        ShaderMask(
-                          shaderCallback: (bounds) => LinearGradient(
-                            colors: [darkGold, goldYellow],
-                          ).createShader(bounds),
-                          child: Text(
-                            '₹${widget.item.price.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.item.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
                             ),
-                          ),
+                            const SizedBox(height: 4),
+                            Text(
+                              widget.item.category,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
-                        FlyToCartButton(
-                          item: widget.item,
-                          cartIconKey: widget.cartIconKey,
-                          isCompact: true,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            ShaderMask(
+                              shaderCallback: (bounds) => LinearGradient(
+                                colors: [darkGold, goldYellow],
+                              ).createShader(bounds),
+                              child: Text(
+                                '₹${widget.item.price.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            FlyToCartButton(
+                              item: widget.item,
+                              cartIconKey: widget.cartIconKey,
+                              isCompact: true,
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _DecorCircle extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _DecorCircle({
+    required this.size,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+}
+
+class _DecorSquiggle extends StatelessWidget {
+  final Color color;
+
+  const _DecorSquiggle({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _SquigglePainter(color: color),
+      size: const Size(36, 18),
+    );
+  }
+}
+
+class _SquigglePainter extends CustomPainter {
+  final Color color;
+
+  _SquigglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    final path = Path()
+      ..moveTo(0, size.height * 0.65)
+      ..quadraticBezierTo(size.width * 0.2, 0, size.width * 0.4, size.height * 0.55)
+      ..quadraticBezierTo(size.width * 0.6, size.height, size.width * 0.8, size.height * 0.45)
+      ..quadraticBezierTo(size.width * 0.9, size.height * 0.1, size.width, size.height * 0.5);
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _DottedPatternPainter extends CustomPainter {
+  final Color dotColor;
+
+  _DottedPatternPainter({required this.dotColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = dotColor;
+    const spacing = 28.0;
+    const radius = 1.2;
+
+    for (double x = 10; x < size.width; x += spacing) {
+      for (double y = 10; y < size.height; y += spacing) {
+        canvas.drawCircle(Offset(x, y), radius, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

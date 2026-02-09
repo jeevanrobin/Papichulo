@@ -1,7 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
-import '../../services/cart_service.dart';
-import '../../models/cart_item.dart';
+
 import '../../data/menu_data.dart';
+import '../../models/cart_item.dart';
+import '../../services/analytics_service.dart';
+import '../../services/cart_service.dart';
+import '../../services/order_api_service.dart';
 
 class CartDrawer extends StatefulWidget {
   final CartService cartService;
@@ -18,6 +23,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
   static const Color darkBg = Color(0xFF121212);
   static const Color darkGrey = Color(0xFF1E1E1E);
   late AnimationController _pulseController;
+  final OrderApiService _orderApi = OrderApiService();
 
   @override
   void initState() {
@@ -53,9 +59,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
             Expanded(
               child: SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
-                child: widget.cartService.items.isEmpty
-                    ? _buildEmptyState()
-                    : _buildCartItems(),
+                child: widget.cartService.items.isEmpty ? _buildEmptyState() : _buildCartItems(),
               ),
             ),
             _buildCheckoutSection(),
@@ -84,9 +88,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
           Text(
             'Your Cart',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
           ),
           GestureDetector(
             onTap: _closeCart,
@@ -143,38 +147,35 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  child: const Text(
-                    '🍕',
-                    style: TextStyle(fontSize: 48),
-                  ),
+                  child: const Icon(Icons.shopping_bag, size: 48, color: Colors.black),
                 ),
               ),
               const SizedBox(height: 18),
               Text(
-                'Your cart is lonely 🍕',
+                'Your cart is empty',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
               ),
               const SizedBox(height: 10),
               Text(
                 'Add some delicious items to get started.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[500],
-                  fontWeight: FontWeight.w500,
-                ),
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
               ),
               const SizedBox(height: 20),
               Text(
                 'Popular Items',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.3,
-                ),
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.3,
+                    ),
               ),
               const SizedBox(height: 12),
               ..._buildPopularItems(),
@@ -202,81 +203,85 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
 
   List<Widget> _buildPopularItems() {
     final popular = papichuloMenu.where((item) => item.rating >= 4.5).take(3).toList();
-    return popular.map((item) => Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: darkBg,
-            ),
-            child: item.imageUrl != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      item.imageUrl!,
-                      fit: BoxFit.cover,
-                      cacheHeight: 48,
-                      cacheWidth: 48,
-                      filterQuality: FilterQuality.low,
-                      errorBuilder: (_, __, ___) => const Icon(Icons.fastfood, color: Colors.grey, size: 20),
-                    ),
-                  )
-                : const Icon(Icons.fastfood, color: Colors.grey, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return popular
+        .map(
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
               children: [
-                Text(
-                  item.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: darkBg,
+                  ),
+                  child: item.imageUrl != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            item.imageUrl!,
+                            fit: BoxFit.cover,
+                            cacheHeight: 48,
+                            cacheWidth: 48,
+                            filterQuality: FilterQuality.low,
+                            errorBuilder: (_, __, ___) => const Icon(Icons.fastfood, color: Colors.grey, size: 20),
+                          ),
+                        )
+                      : const Icon(Icons.fastfood, color: Colors.grey, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      Text(
+                        'Rs ${item.price.toStringAsFixed(0)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: goldYellow,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  '₹${item.price.toStringAsFixed(0)}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: goldYellow,
-                    fontWeight: FontWeight.w700,
+                GestureDetector(
+                  onTap: () => widget.cartService.addItem(item),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: goldYellow,
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: [
+                        BoxShadow(
+                          color: goldYellow.withOpacity(0.3),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      'Add',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          GestureDetector(
-            onTap: () => widget.cartService.addItem(item),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: goldYellow,
-                borderRadius: BorderRadius.circular(6),
-                boxShadow: [
-                  BoxShadow(
-                    color: goldYellow.withOpacity(0.3),
-                    blurRadius: 6,
-                  ),
-                ],
-              ),
-              child: Text(
-                'Add',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    )).toList();
+        )
+        .toList();
   }
 
   Widget _buildCartItem(CartItem cartItem) {
@@ -309,8 +314,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                           cacheHeight: 64,
                           cacheWidth: 64,
                           filterQuality: FilterQuality.low,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(Icons.fastfood, color: Colors.grey, size: 28),
+                          errorBuilder: (_, __, ___) => const Icon(Icons.fastfood, color: Colors.grey, size: 28),
                         ),
                       )
                     : const Icon(Icons.fastfood, color: Colors.grey, size: 28),
@@ -325,20 +329,20 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3,
-                        fontSize: 14,
-                      ),
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.3,
+                            fontSize: 14,
+                          ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '₹${cartItem.foodItem.price.toStringAsFixed(2)}',
+                      'Rs ${cartItem.foodItem.price.toStringAsFixed(2)}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: goldYellow,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
+                            color: goldYellow,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
                     ),
                   ],
                 ),
@@ -369,10 +373,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       child: Text(
                         '${cartItem.quantity}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: goldYellow,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
+                              color: goldYellow,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
                       ),
                     ),
                     GestureDetector(
@@ -395,18 +399,18 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
               Text(
                 'Subtotal:',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[500],
-                  fontWeight: FontWeight.w500,
-                  fontSize: 12,
-                ),
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
               ),
               Text(
-                '₹${cartItem.totalPrice.toStringAsFixed(2)}',
+                'Rs ${cartItem.totalPrice.toStringAsFixed(2)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: goldYellow,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                ),
+                      color: goldYellow,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
               ),
             ],
           ),
@@ -433,16 +437,16 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  '₹${widget.cartService.totalAmount.toStringAsFixed(2)}',
+                  'Rs ${widget.cartService.totalAmount.toStringAsFixed(2)}',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: goldYellow,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
-                    fontSize: 22,
-                  ),
+                        color: goldYellow,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.5,
+                        fontSize: 22,
+                      ),
                 ),
                 GestureDetector(
-                  onTap: () => _showCheckoutDialog(),
+                  onTap: _showCheckoutDialog,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
@@ -462,11 +466,11 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         Text(
                           'Checkout',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.3,
-                            fontSize: 14,
-                          ),
+                                color: Colors.black,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.3,
+                                fontSize: 14,
+                              ),
                         ),
                         const SizedBox(width: 8),
                         const Icon(Icons.arrow_forward, color: Colors.black, size: 18),
@@ -498,11 +502,11 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     'Browse Menu',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.3,
-                      fontSize: 15,
-                    ),
+                          color: Colors.black,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                          fontSize: 15,
+                        ),
                   ),
                 ),
               ),
@@ -513,27 +517,322 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
   }
 
   void _showCheckoutDialog() {
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final addressController = TextEditingController();
+    var paymentMethod = 'COD';
+
     showDialog(
       context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              backgroundColor: darkGrey,
+              title: Text(
+                'Checkout',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: goldYellow,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+              ),
+              content: SizedBox(
+                width: 420,
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildCheckoutInput(
+                        controller: nameController,
+                        label: 'Name',
+                        icon: Icons.person_outline,
+                        validator: (v) => (v == null || v.trim().length < 2) ? 'Enter a valid name' : null,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildCheckoutInput(
+                        controller: phoneController,
+                        label: 'Phone',
+                        icon: Icons.phone_outlined,
+                        keyboardType: TextInputType.phone,
+                        validator: (v) {
+                          final value = (v ?? '').trim();
+                          final digits = value.replaceAll(RegExp(r'\D'), '');
+                          return digits.length < 10 ? 'Enter a valid phone number' : null;
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _buildCheckoutInput(
+                        controller: addressController,
+                        label: 'Address',
+                        icon: Icons.location_on_outlined,
+                        maxLines: 2,
+                        validator: (v) => (v == null || v.trim().length < 8) ? 'Enter full delivery address' : null,
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: goldYellow.withOpacity(0.2)),
+                          borderRadius: BorderRadius.circular(10),
+                          color: darkBg,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: RadioListTile<String>(
+                                value: 'COD',
+                                groupValue: paymentMethod,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                activeColor: goldYellow,
+                                title: Text(
+                                  'COD',
+                                  style: TextStyle(color: Colors.grey[200], fontSize: 13),
+                                ),
+                                onChanged: (v) => setDialogState(() => paymentMethod = v ?? 'COD'),
+                              ),
+                            ),
+                            Expanded(
+                              child: RadioListTile<String>(
+                                value: 'MOCK_ONLINE',
+                                groupValue: paymentMethod,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                activeColor: goldYellow,
+                                title: Text(
+                                  'Mock Payment',
+                                  style: TextStyle(color: Colors.grey[200], fontSize: 13),
+                                ),
+                                onChanged: (v) => setDialogState(() => paymentMethod = v ?? 'MOCK_ONLINE'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Total',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  color: Colors.grey[300],
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          Text(
+                            'Rs ${widget.cartService.totalAmount.toStringAsFixed(2)}',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: goldYellow,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.grey[400]),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () async {
+                    if (!formKey.currentState!.validate()) return;
+
+                    final paymentLabel = paymentMethod == 'COD' ? 'Cash on Delivery' : 'Mock Online Payment';
+                    try {
+                      final order = await _orderApi.createOrder(
+                        customerName: nameController.text.trim(),
+                        phone: phoneController.text.trim(),
+                        address: addressController.text.trim(),
+                        paymentMethod: paymentLabel,
+                        items: widget.cartService.items,
+                        totalAmount: widget.cartService.totalAmount,
+                      );
+
+                      if (!context.mounted) return;
+                      AnalyticsService().track(
+                        'order_placed',
+                        params: {
+                          'order_id': order.id,
+                          'payment_method': paymentLabel,
+                          'item_count': widget.cartService.itemCount,
+                          'total_amount': widget.cartService.totalAmount,
+                        },
+                      );
+                      Navigator.pop(dialogContext);
+                      await _showOrderSuccessDialog(
+                        orderId: order.id.isEmpty ? _generateOrderId() : order.id,
+                        customerName: nameController.text.trim(),
+                        paymentMethodLabel: paymentLabel,
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      if (paymentMethod == 'MOCK_ONLINE') {
+                        final localOrderId = _generateOrderId();
+                        AnalyticsService().track(
+                          'order_placed_local_fallback',
+                          params: {
+                            'order_id': localOrderId,
+                            'payment_method': paymentLabel,
+                            'item_count': widget.cartService.itemCount,
+                            'total_amount': widget.cartService.totalAmount,
+                          },
+                        );
+                        Navigator.pop(dialogContext);
+                        await _showOrderSuccessDialog(
+                          orderId: localOrderId,
+                          customerName: nameController.text.trim(),
+                          paymentMethodLabel: '$paymentLabel (Local)',
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Backend unavailable. Order saved locally as mock order.'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        return;
+                      }
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(_friendlyOrderError(e)),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: goldYellow,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Place Order',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.3,
+                          ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCheckoutInput({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required String? Function(String?) validator,
+    TextInputType? keyboardType,
+    int maxLines = 1,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      validator: validator,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.grey[400]),
+        prefixIcon: Icon(icon, color: goldYellow.withOpacity(0.9), size: 18),
+        filled: true,
+        fillColor: darkBg,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: goldYellow.withOpacity(0.2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: goldYellow, width: 1.4),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Colors.redAccent),
+        ),
+      ),
+    );
+  }
+
+  String _generateOrderId() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString().substring(7);
+    final randomPart = (1000 + Random().nextInt(9000)).toString();
+    return 'PC$timestamp$randomPart';
+  }
+
+  Future<void> _showOrderSuccessDialog({
+    required String orderId,
+    required String customerName,
+    required String paymentMethodLabel,
+  }) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         backgroundColor: darkGrey,
-        title: Text(
-          'Order Confirmed',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            color: goldYellow,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-          ),
+        title: Row(
+          children: [
+            const Icon(Icons.check_circle, color: goldYellow, size: 26),
+            const SizedBox(width: 8),
+            Text(
+              'Order Placed',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: goldYellow,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                  ),
+            ),
+          ],
         ),
-        content: Text(
-          'Your order of ₹${widget.cartService.totalAmount.toStringAsFixed(2)} has been placed!',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Colors.grey[300],
-            fontWeight: FontWeight.w500,
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Thanks, $customerName!',
+              style: TextStyle(color: Colors.grey[200], fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Order ID: $orderId',
+              style: const TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Payment: $paymentMethodLabel',
+              style: TextStyle(color: Colors.grey[300]),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Total: Rs ${widget.cartService.totalAmount.toStringAsFixed(2)}',
+              style: TextStyle(color: Colors.grey[100], fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
         actions: [
           GestureDetector(
@@ -549,17 +848,27 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'OK',
+                'Done',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
+                      color: Colors.black,
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _friendlyOrderError(Object error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('failed to fetch') || message.contains('network')) {
+      return 'Unable to reach server. Please check connection and try again.';
+    }
+    if (message.contains('400')) {
+      return 'Invalid order details. Please review your checkout form.';
+    }
+    return 'Could not place order right now. Please try again.';
   }
 }

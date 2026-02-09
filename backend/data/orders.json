@@ -1,0 +1,46 @@
+[
+  {
+    "id": "ORD136815437863",
+    "customerName": "Jeevan",
+    "phone": "8309823797",
+    "address": "Hyderabad",
+    "paymentMethod": "Cash on Delivery",
+    "items": [
+      {
+        "name": "Veg Delight",
+        "price": 349,
+        "quantity": 1
+      },
+      {
+        "name": "Crispy Onion Pizza",
+        "price": 279,
+        "quantity": 1
+      }
+    ],
+    "totalAmount": 628,
+    "status": "new",
+    "createdAt": "2026-02-09T05:08:01.543Z"
+  },
+  {
+    "id": "ORD138229739026",
+    "customerName": "Jeevan Reddy",
+    "phone": "7846519+684",
+    "address": "asdlivfhgasljkcvbxaldshcujcvf",
+    "paymentMethod": "Cash on Delivery",
+    "items": [
+      {
+        "name": "Veg Delight",
+        "price": 349,
+        "quantity": 2
+      },
+      {
+        "name": "Crispy Onion Pizza",
+        "price": 279,
+        "quantity": 3
+      }
+    ],
+    "totalAmount": 1535,
+    "status": "new",
+    "createdAt": "2026-02-09T05:10:22.973Z"
+  }
+]

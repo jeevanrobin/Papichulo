@@ -1,0 +1,119 @@
+[
+  {
+    "name": "Cheese Pizza",
+    "category": "Pizza",
+    "type": "Veg",
+    "ingredients": ["Cheese", "Dough", "Tomato Sauce"],
+    "imageUrl": "https://images.unsplash.com/photo-1513104890138-7c749659a591",
+    "price": 299,
+    "rating": 4.5
+  },
+  {
+    "name": "Veg Delight",
+    "category": "Pizza",
+    "type": "Veg",
+    "ingredients": ["Mixed Vegetables", "Cheese", "Dough"],
+    "imageUrl": "https://images.unsplash.com/photo-1574071318508-1cdbab80d002",
+    "price": 349,
+    "rating": 4.3
+  },
+  {
+    "name": "Crispy Onion Pizza",
+    "category": "Pizza",
+    "type": "Veg",
+    "ingredients": ["Onions", "Cheese", "Spices"],
+    "imageUrl": "https://images.unsplash.com/photo-1593560708920-61dd98c46a4e",
+    "price": 279,
+    "rating": 4.4
+  },
+  {
+    "name": "Veg Burger",
+    "category": "Burgers",
+    "type": "Veg",
+    "ingredients": ["Veg Patty", "Lettuce", "Tomato", "Sauce"],
+    "imageUrl": "https://images.unsplash.com/photo-1520072959219-c595dc870360",
+    "price": 199,
+    "rating": 4.3
+  },
+  {
+    "name": "Tandoori Veg Burger",
+    "category": "Burgers",
+    "type": "Veg",
+    "ingredients": ["Veg Patty", "Tandoori Sauce", "Onions"],
+    "imageUrl": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd",
+    "price": 219,
+    "rating": 4.4
+  },
+  {
+    "name": "Chicken Burger",
+    "category": "Burgers",
+    "type": "Non-Veg",
+    "ingredients": ["Chicken Patty", "Cheese", "Sauce"],
+    "imageUrl": "https://images.unsplash.com/photo-1562547256-7eb01d277f1f",
+    "price": 249,
+    "rating": 4.5
+  },
+  {
+    "name": "Veg Sandwich",
+    "category": "Sandwiches",
+    "type": "Veg",
+    "ingredients": ["Mixed Vegetables", "Bread", "Sauce"],
+    "imageUrl": "https://images.unsplash.com/photo-1588195538326-c5b1e9f80a1b",
+    "price": 149,
+    "rating": 4.2
+  },
+  {
+    "name": "Corn Sandwich",
+    "category": "Sandwiches",
+    "type": "Veg",
+    "ingredients": ["Sweet Corn", "Cheese", "Bread"],
+    "imageUrl": "https://images.unsplash.com/photo-1509440159596-0249088772ff",
+    "price": 159,
+    "rating": 4.3
+  },
+  {
+    "name": "Club Sandwich",
+    "category": "Sandwiches",
+    "type": "Non-Veg",
+    "ingredients": ["Chicken", "Cheese", "Multiple Layers"],
+    "imageUrl": "https://images.unsplash.com/photo-1541519227354-08fa5d50c44d",
+    "price": 189,
+    "rating": 4.4
+  },
+  {
+    "name": "Chilli Cheese Dog",
+    "category": "Hot Dogs",
+    "type": "Non-Veg",
+    "ingredients": ["Hot Dog", "Chilli", "Cheese"],
+    "imageUrl": "https://images.unsplash.com/photo-1612392062798-2dbaa4d3d6e4",
+    "price": 129,
+    "rating": 4.2
+  },
+  {
+    "name": "Spicy Dog",
+    "category": "Hot Dogs",
+    "type": "Non-Veg",
+    "ingredients": ["Hot Dog", "Spicy Sauce", "Onions"],
+    "imageUrl": "https://images.unsplash.com/photo-1599599810769-bcde5a160d32",
+    "price": 119,
+    "rating": 4.1
+  },
+  {
+    "name": "French Fries",
+    "category": "Snacks",
+    "type": "Veg",
+    "ingredients": ["Potatoes", "Salt", "Spices"],
+    "imageUrl": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877",
+    "price": 79,
+    "rating": 4.4
+  },
+  {
+    "name": "Chicken Nuggets",
+    "category": "Snacks",
+    "type": "Non-Veg",
+    "ingredients": ["Chicken", "Crispy Coating", "Spices"],
+    "imageUrl": "https://images.unsplash.com/photo-1562967914-608f82629710",
+    "price": 129,
+    "rating": 4.5
+  }
+]

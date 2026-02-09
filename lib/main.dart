@@ -1,12 +1,48 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/theme.dart';
 import 'providers/cart_provider.dart';
 import 'services/cart_service.dart';
+import 'services/analytics_service.dart';
 import 'screens/splash/splash_screen.dart';
+import 'widgets/error_fallback_widget.dart';
 
 void main() {
-  runApp(const PapichuloApp());
+  runZonedGuarded(() {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      AnalyticsService().track(
+        'app_error',
+        params: {
+          'exception': details.exceptionAsString(),
+          'library': details.library ?? 'unknown',
+        },
+      );
+    };
+
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      AnalyticsService().track(
+        'render_error',
+        params: {
+          'exception': details.exceptionAsString(),
+        },
+      );
+      return const ErrorFallbackWidget();
+    };
+
+    runApp(const PapichuloApp());
+  }, (error, stack) {
+    AnalyticsService().track(
+      'zone_error',
+      params: {
+        'error': error.toString(),
+      },
+    );
+  });
 }
 
 class PapichuloApp extends StatelessWidget {

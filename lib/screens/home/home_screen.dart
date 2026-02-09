@@ -1,10 +1,13 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../data/menu_data.dart';
 import '../../widgets/fly_to_cart_button.dart';
 import '../../widgets/animated_cart_icon.dart';
+import '../../services/analytics_service.dart';
 import '../menu/menu_screen.dart';
+import '../admin/orders_admin_screen.dart';
 import '../cart/cart_drawer.dart';
 import '../../providers/cart_provider.dart';
 
@@ -36,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    AnalyticsService().track('page_view', params: {'screen': 'home'});
     _cartIconKey = GlobalKey();
     _headerController = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
     _heroController = AnimationController(duration: const Duration(milliseconds: 500), vsync: this);
@@ -184,6 +188,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   Row(
                     children: [
                       _buildAnimatedNavItem('Menu', () => Navigator.push(context, _createRoute(const MenuScreen()))),
+                      const SizedBox(width: 20),
+                      _buildAnimatedNavItem('Admin', () => Navigator.push(context, _createRoute(const OrdersAdminScreen()))),
                       const SizedBox(width: 20),
                       _buildAnimatedCartIcon(),
                       const SizedBox(width: 20),
@@ -649,6 +655,369 @@ class _FooterWidget extends StatelessWidget {
   static const Color darkGold = Color(0xFFB8860B);
   static const Color black = Color(0xFF000000);
   static const Color darkGrey = Color(0xFF1A1A1A);
+  static const String contactPhone = '7829999976';
+
+  Future<void> _openPhoneDialer() async {
+    final Uri phoneUri = Uri(scheme: 'tel', path: contactPhone);
+    await launchUrl(phoneUri);
+  }
+
+  Future<void> _openEmail() async {
+    final Uri emailUri = Uri(scheme: 'mailto', path: 'info@papichulo.com');
+    await launchUrl(emailUri);
+  }
+
+  Future<void> _openLocation() async {
+    final Uri mapUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=Hyderabad%2C%20India');
+    await launchUrl(mapUri);
+  }
+
+  Future<void> _showAboutUsDialog(BuildContext context) async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierLabel: 'About Us',
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.7),
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        final double screenWidth = MediaQuery.of(dialogContext).size.width;
+        final double dialogWidth = screenWidth > 900 ? screenWidth * 0.5 : screenWidth - 48;
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: SizedBox(
+            width: dialogWidth,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF111111), Color(0xFF1A1A1A)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: goldYellow.withOpacity(0.5), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: goldYellow.withOpacity(0.2),
+                    blurRadius: 26,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.restaurant_menu, color: goldYellow, size: 22),
+                      const SizedBox(width: 10),
+                      Text(
+                        'About Papichulo',
+                        style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
+                              color: goldYellow,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'We are Papichulo, focused on serving fresh, tasty food with premium quality and quick service. '
+                    'Our team is committed to giving you a better food experience with every order.',
+                    style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey[300],
+                          height: 1.6,
+                        ),
+                  ),
+                  const SizedBox(height: 18),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: goldYellow,
+                        foregroundColor: black,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.04),
+              end: Offset.zero,
+            ).animate(curved),
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showFaqDialog(BuildContext context) async {
+    await _showAnimatedInfoDialog(
+      context,
+      title: 'FAQ',
+      content: 'We deliver fresh food quickly, with menu quality and customer support as top priorities.',
+    );
+  }
+
+  Future<void> _showTermsDialog(BuildContext context) async {
+    await _showAnimatedInfoDialog(
+      context,
+      title: 'Terms & Conditions',
+      content: 'Orders are prepared after confirmation. Delivery time may vary by location and traffic conditions.',
+    );
+  }
+
+  Future<void> _showAnimatedInfoDialog(
+    BuildContext context, {
+    required String title,
+    required String content,
+  }) async {
+    await showGeneralDialog<void>(
+      context: context,
+      barrierLabel: title,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.7),
+      transitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        final double screenWidth = MediaQuery.of(dialogContext).size.width;
+        final double dialogWidth = screenWidth > 900 ? screenWidth * 0.5 : screenWidth - 48;
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: SizedBox(
+            width: dialogWidth,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF111111), Color(0xFF1A1A1A)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: goldYellow.withOpacity(0.5), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: goldYellow.withOpacity(0.2),
+                    blurRadius: 26,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
+                          color: goldYellow,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    content,
+                    style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey[300],
+                          height: 1.6,
+                        ),
+                  ),
+                  const SizedBox(height: 18),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: goldYellow,
+                        foregroundColor: black,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.04),
+              end: Offset.zero,
+            ).animate(curved),
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.96, end: 1.0).animate(curved),
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showInfoDialog(
+    BuildContext context, {
+    required String title,
+    required String content,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.7),
+      builder: (dialogContext) {
+        final double screenWidth = MediaQuery.of(dialogContext).size.width;
+        final double dialogWidth = screenWidth > 900 ? screenWidth * 0.5 : screenWidth - 48;
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: SizedBox(
+            width: dialogWidth,
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF111111), Color(0xFF1A1A1A)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: goldYellow.withOpacity(0.5), width: 1.2),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(dialogContext).textTheme.titleLarge?.copyWith(
+                          color: goldYellow,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    content,
+                    style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey[300],
+                          height: 1.6,
+                        ),
+                  ),
+                  const SizedBox(height: 18),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: goldYellow,
+                        foregroundColor: black,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFooterLink(
+    BuildContext context, {
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[400],
+                  decoration: TextDecoration.underline,
+                ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooterIcon({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Icon(icon, color: goldYellow, size: 20),
+      ),
+    );
+  }
+
+  Widget _buildPaymentMethodChip(
+    BuildContext context, {
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            border: Border.all(color: goldYellow.withOpacity(0.3)),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: goldYellow)),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -675,9 +1044,21 @@ class _FooterWidget extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('+123-456 789', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400])),
-                  Text('info@papichulo.com', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400])),
-                  Text('New York, USA', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400])),
+                  _buildFooterLink(
+                    context,
+                    label: contactPhone,
+                    onTap: _openPhoneDialer,
+                  ),
+                  _buildFooterLink(
+                    context,
+                    label: 'info@papichulo.com',
+                    onTap: _openEmail,
+                  ),
+                  _buildFooterLink(
+                    context,
+                    label: 'Hyderabad, India',
+                    onTap: _openLocation,
+                  ),
                 ],
               ),
               Column(
@@ -691,9 +1072,21 @@ class _FooterWidget extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 20),
-                  Text('About Us', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400])),
-                  Text('FAQ', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400])),
-                  Text('Terms & Conditions', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400])),
+                  _buildFooterLink(
+                    context,
+                    label: 'About Us',
+                    onTap: () => _showAboutUsDialog(context),
+                  ),
+                  _buildFooterLink(
+                    context,
+                    label: 'FAQ',
+                    onTap: () => _showFaqDialog(context),
+                  ),
+                  _buildFooterLink(
+                    context,
+                    label: 'Terms & Conditions',
+                    onTap: () => _showTermsDialog(context),
+                  ),
                 ],
               ),
               Column(
@@ -709,11 +1102,32 @@ class _FooterWidget extends StatelessWidget {
                   const SizedBox(height: 20),
                   Row(
                     children: [
-                      Icon(Icons.facebook, color: goldYellow, size: 20),
+                      _buildFooterIcon(
+                        icon: Icons.facebook,
+                        onTap: () => _showInfoDialog(
+                          context,
+                          title: 'Facebook',
+                          content: 'Our Facebook page will be available soon.',
+                        ),
+                      ),
                       const SizedBox(width: 12),
-                      Icon(Icons.camera_alt, color: goldYellow, size: 20),
+                      _buildFooterIcon(
+                        icon: Icons.camera_alt,
+                        onTap: () => _showInfoDialog(
+                          context,
+                          title: 'Instagram',
+                          content: 'Our Instagram handle will be available soon.',
+                        ),
+                      ),
                       const SizedBox(width: 12),
-                      Icon(Icons.language, color: goldYellow, size: 20),
+                      _buildFooterIcon(
+                        icon: Icons.language,
+                        onTap: () => _showInfoDialog(
+                          context,
+                          title: 'Website',
+                          content: 'You are already on our website. More updates coming soon.',
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -731,22 +1145,24 @@ class _FooterWidget extends StatelessWidget {
                   const SizedBox(height: 20),
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: goldYellow.withOpacity(0.3)),
-                          borderRadius: BorderRadius.circular(4),
+                      _buildPaymentMethodChip(
+                        context,
+                        label: 'Visa',
+                        onTap: () => _showInfoDialog(
+                          context,
+                          title: 'Payment - Visa',
+                          content: 'Visa card payments are accepted for all online orders.',
                         ),
-                        child: Text('Visa', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: goldYellow)),
                       ),
                       const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: goldYellow.withOpacity(0.3)),
-                          borderRadius: BorderRadius.circular(4),
+                      _buildPaymentMethodChip(
+                        context,
+                        label: 'MC',
+                        onTap: () => _showInfoDialog(
+                          context,
+                          title: 'Payment - MasterCard',
+                          content: 'MasterCard payments are accepted for all online orders.',
                         ),
-                        child: Text('MC', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: goldYellow)),
                       ),
                     ],
                   ),
