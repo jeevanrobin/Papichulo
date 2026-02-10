@@ -80,6 +80,26 @@ class OrderApiService {
     throw lastError ?? Exception('Request failed ($path)');
   }
 
+  Future<http.Response> _patchWithFallback(String path, Object payload) async {
+    Exception? lastError;
+    for (final baseUrl in _baseUrls) {
+      try {
+        final response = await _client.patch(
+          Uri.parse('$baseUrl$path'),
+          headers: {'Content-Type': 'application/json', ..._adminHeaders()},
+          body: jsonEncode(payload),
+        );
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return response;
+        }
+        lastError = Exception(_responseError(path, response, baseUrl));
+      } catch (error) {
+        lastError = Exception(error.toString());
+      }
+    }
+    throw lastError ?? Exception('Request failed ($path)');
+  }
+
   Map<String, String> _adminHeaders() {
     if (ApiConfig.adminKey.isEmpty) return const {};
     return {'x-admin-key': ApiConfig.adminKey};
@@ -193,6 +213,13 @@ class OrderApiService {
       );
     }
     throw Exception('Invalid geocode response format');
+  }
+
+  Future<void> updateOrderStatus({
+    required String orderId,
+    required String status,
+  }) async {
+    await _patchWithFallback('/orders/$orderId/status', {'status': status});
   }
 }
 

@@ -42,7 +42,7 @@ const orderCreateSchema = z.object({
 }).strict();
 
 const orderStatusSchema = z.object({
-  status: z.enum(['new', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']),
+  status: z.enum(['new', 'accepted', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']),
 }).strict();
 
 const deliveryConfigSchema = z.object({

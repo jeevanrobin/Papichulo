@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../models/delivery_config.dart';
 import '../../models/order_record.dart';
@@ -24,6 +25,7 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
   final TextEditingController _storeLatController = TextEditingController();
   final TextEditingController _storeLngController = TextEditingController();
   bool _savingConfig = false;
+  bool _detectingStoreLocation = false;
 
   @override
   void initState() {
@@ -98,6 +100,129 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
     } finally {
       if (mounted) {
         setState(() => _savingConfig = false);
+      }
+    }
+  }
+
+  Future<void> _moveOrderToNextStage(OrderRecord order) async {
+    final nextStatus = _nextStatus(order.status);
+    if (nextStatus == null) return;
+    try {
+      await _api.updateOrderStatus(orderId: order.id, status: nextStatus);
+      if (!mounted) return;
+      await _refresh();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Order ${order.id} moved to ${_labelForStatus(nextStatus)}.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update order status: $error'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  String? _nextStatus(String status) {
+    switch (status) {
+      case 'new':
+        return 'accepted';
+      case 'accepted':
+        return 'preparing';
+      case 'preparing':
+        return 'out_for_delivery';
+      default:
+        return null;
+    }
+  }
+
+  String _labelForStatus(String status) {
+    switch (status) {
+      case 'new':
+        return 'New';
+      case 'accepted':
+        return 'Accepted';
+      case 'preparing':
+        return 'Preparing';
+      case 'out_for_delivery':
+        return 'Sent to Delivery';
+      case 'delivered':
+        return 'Delivered';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return status.toUpperCase();
+    }
+  }
+
+  String _nextActionLabel(String status) {
+    switch (status) {
+      case 'new':
+        return 'Accept Order';
+      case 'accepted':
+        return 'Mark Preparing';
+      case 'preparing':
+        return 'Send to Delivery';
+      default:
+        return '';
+    }
+  }
+
+  Future<void> _useCurrentLocationForStore() async {
+    setState(() => _detectingStoreLocation = true);
+    try {
+      final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!isServiceEnabled) {
+        throw Exception('Location services are disabled.');
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied) {
+        throw Exception('Location permission denied.');
+      }
+      if (permission == LocationPermission.deniedForever) {
+        throw Exception(
+          'Location permission permanently denied. Enable it in browser/system settings.',
+        );
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _storeLatController.text = position.latitude.toStringAsFixed(6);
+        _storeLngController.text = position.longitude.toStringAsFixed(6);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Store location updated from current position.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not detect current location: $error'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _detectingStoreLocation = false);
       }
     }
   }
@@ -234,6 +359,46 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _detectingStoreLocation
+                                ? null
+                                : _useCurrentLocationForStore,
+                            icon: _detectingStoreLocation
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.my_location, size: 16),
+                            label: Text(
+                              _detectingStoreLocation
+                                  ? 'Detecting...'
+                                  : 'Use Current Location',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: goldYellow,
+                              side: BorderSide(
+                                color: goldYellow.withOpacity(0.35),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Tip: Detect store location once, then set radius and Save.',
+                              style: TextStyle(
+                                color: Colors.grey[400],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 );
@@ -334,7 +499,7 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(
-                                    order.status.toUpperCase(),
+                                    _labelForStatus(order.status).toUpperCase(),
                                     style: const TextStyle(
                                       color: goldYellow,
                                       fontWeight: FontWeight.w700,
@@ -385,6 +550,21 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                                 fontSize: 12,
                               ),
                             ),
+                            if (_nextStatus(order.status) != null) ...[
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _moveOrderToNextStage(order),
+                                  icon: const Icon(Icons.chevron_right),
+                                  label: Text(_nextActionLabel(order.status)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: goldYellow,
+                                    foregroundColor: Colors.black,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       );
