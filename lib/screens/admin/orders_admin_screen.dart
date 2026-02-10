@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -26,29 +28,89 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
   final TextEditingController _storeLngController = TextEditingController();
   bool _savingConfig = false;
   bool _detectingStoreLocation = false;
+  final Set<String> _seenOrderIds = <String>{};
+  bool _seededExistingOrders = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     AnalyticsService().track('page_view', params: {'screen': 'admin_orders'});
-    _ordersFuture = _api.fetchOrders();
+    _ordersFuture = _fetchOrdersWithAlerts();
     _configFuture = _api.fetchDeliveryConfig();
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _refresh(silent: true);
+    });
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({bool silent = false}) async {
     setState(() {
-      _ordersFuture = _api.fetchOrders();
+      _ordersFuture = _fetchOrdersWithAlerts();
       _configFuture = _api.fetchDeliveryConfig();
     });
-    await Future.wait([_ordersFuture, _configFuture]);
+    try {
+      await Future.wait([_ordersFuture, _configFuture]);
+    } catch (_) {
+      if (!silent) rethrow;
+    }
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _radiusController.dispose();
     _storeLatController.dispose();
     _storeLngController.dispose();
     super.dispose();
+  }
+
+  Future<List<OrderRecord>> _fetchOrdersWithAlerts() async {
+    final orders = await _api.fetchOrders();
+    if (!_seededExistingOrders) {
+      _seenOrderIds.addAll(orders.map((order) => order.id));
+      _seededExistingOrders = true;
+      return orders;
+    }
+
+    final newOrders = orders.where((order) {
+      return order.status == 'new' && !_seenOrderIds.contains(order.id);
+    }).toList();
+
+    _seenOrderIds.addAll(orders.map((order) => order.id));
+
+    if (newOrders.isNotEmpty && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showNewOrderAlert(newOrders.first);
+      });
+    }
+    return orders;
+  }
+
+  Future<void> _showNewOrderAlert(OrderRecord order) async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF222222),
+        title: const Text(
+          'New Order Received',
+          style: TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Order ${order.id}\nCustomer: ${order.customerName}\nTotal: Rs ${order.totalAmount.toStringAsFixed(2)}',
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'OK',
+              style: TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveDeliveryConfig() async {
@@ -448,7 +510,18 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                 }
 
                 final orders = snapshot.data ?? const <OrderRecord>[];
-                if (orders.isEmpty) {
+                final incoming = orders.where((order) {
+                  return order.status == 'new' ||
+                      order.status == 'accepted' ||
+                      order.status == 'preparing';
+                }).toList();
+                final history = orders.where((order) {
+                  return order.status == 'out_for_delivery' ||
+                      order.status == 'delivered' ||
+                      order.status == 'cancelled';
+                }).toList();
+
+                if (incoming.isEmpty && history.isEmpty) {
                   return Center(
                     child: Text(
                       'No incoming orders yet.',
@@ -459,116 +532,45 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
 
                 return RefreshIndicator(
                   onRefresh: _refresh,
-                  child: ListView.separated(
+                  child: ListView(
                     padding: const EdgeInsets.all(16),
-                    itemCount: orders.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final order = orders[index];
-                      return Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF222222),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: goldYellow.withOpacity(0.2),
-                          ),
+                    children: [
+                      Text(
+                        'Incoming Orders',
+                        style: TextStyle(
+                          color: Colors.grey[200],
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Order ${order.id}',
-                                    style: const TextStyle(
-                                      color: goldYellow,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: goldYellow.withOpacity(0.18),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    _labelForStatus(order.status).toUpperCase(),
-                                    style: const TextStyle(
-                                      color: goldYellow,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Customer: ${order.customerName}',
-                              style: TextStyle(color: Colors.grey[200]),
-                            ),
-                            Text(
-                              'Phone: ${order.phone}',
-                              style: TextStyle(color: Colors.grey[200]),
-                            ),
-                            Text(
-                              'Address: ${order.address}',
-                              style: TextStyle(color: Colors.grey[300]),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Text(
-                                  'Items: ${order.itemCount}',
-                                  style: TextStyle(
-                                    color: Colors.grey[300],
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Text(
-                                  'Total: Rs ${order.totalAmount.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: goldYellow,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Placed: ${order.createdAt.toLocal()}',
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 12,
-                              ),
-                            ),
-                            if (_nextStatus(order.status) != null) ...[
-                              const SizedBox(height: 10),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _moveOrderToNextStage(order),
-                                  icon: const Icon(Icons.chevron_right),
-                                  label: Text(_nextActionLabel(order.status)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: goldYellow,
-                                    foregroundColor: Colors.black,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (incoming.isEmpty)
+                        _buildEmptySection('No active incoming orders.'),
+                      ...incoming.map(
+                        (order) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildOrderCard(order),
                         ),
-                      );
-                    },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'History',
+                        style: TextStyle(
+                          color: Colors.grey[200],
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (history.isEmpty)
+                        _buildEmptySection('No order history yet.'),
+                      ...history.map(
+                        (order) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildOrderCard(order),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },
@@ -601,6 +603,116 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: goldYellow),
         ),
+      ),
+    );
+  }
+
+  Widget _buildEmptySection(String text) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF222222),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: goldYellow.withOpacity(0.18)),
+      ),
+      child: Text(text, style: TextStyle(color: Colors.grey[300])),
+    );
+  }
+
+  Widget _buildOrderCard(OrderRecord order) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF222222),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: goldYellow.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Order ${order.id}',
+                  style: const TextStyle(
+                    color: goldYellow,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: goldYellow.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  _labelForStatus(order.status).toUpperCase(),
+                  style: const TextStyle(
+                    color: goldYellow,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Customer: ${order.customerName}',
+            style: TextStyle(color: Colors.grey[200]),
+          ),
+          Text(
+            'Phone: ${order.phone}',
+            style: TextStyle(color: Colors.grey[200]),
+          ),
+          Text(
+            'Address: ${order.address}',
+            style: TextStyle(color: Colors.grey[300]),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                'Items: ${order.itemCount}',
+                style: TextStyle(
+                  color: Colors.grey[300],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                'Total: Rs ${order.totalAmount.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  color: goldYellow,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Placed: ${order.createdAt.toLocal()}',
+            style: TextStyle(color: Colors.grey[500], fontSize: 12),
+          ),
+          if (_nextStatus(order.status) != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: () => _moveOrderToNextStage(order),
+                icon: const Icon(Icons.chevron_right),
+                label: Text(_nextActionLabel(order.status)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: goldYellow,
+                  foregroundColor: Colors.black,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
