@@ -59,10 +59,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
           ).createShader(bounds),
           child: const Text(
             'Papichulo Menu',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
           ),
         ),
         backgroundColor: black,
@@ -85,12 +82,22 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
-                painter: _DottedPatternPainter(dotColor: Colors.black.withOpacity(0.03)),
+                painter: _DottedPatternPainter(
+                  dotColor: Colors.black.withOpacity(0.03),
+                ),
               ),
             ),
           ),
-          const Positioned(top: 14, left: 12, child: _DecorCircle(size: 34, color: Color(0x22FFD700))),
-          const Positioned(top: 76, right: 18, child: _DecorSquiggle(color: Color(0x448B5E00))),
+          const Positioned(
+            top: 14,
+            left: 12,
+            child: _DecorCircle(size: 34, color: Color(0x22FFD700)),
+          ),
+          const Positioned(
+            top: 76,
+            right: 18,
+            child: _DecorSquiggle(color: Color(0x448B5E00)),
+          ),
           SlideTransition(
             position: _slideAnimation,
             child: SafeArea(
@@ -100,7 +107,9 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: categories.map((category) {
-                      final items = papichuloMenu.where((item) => item.category == category).toList();
+                      final items = papichuloMenu
+                          .where((item) => item.category == category)
+                          .toList();
                       if (items.isEmpty) return const SizedBox.shrink();
 
                       return Padding(
@@ -112,9 +121,14 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                               clipBehavior: Clip.none,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
                                   decoration: BoxDecoration(
-                                    gradient: LinearGradient(colors: [goldYellow, darkGold]),
+                                    gradient: LinearGradient(
+                                      colors: [goldYellow, darkGold],
+                                    ),
                                     borderRadius: BorderRadius.circular(20),
                                     boxShadow: [
                                       BoxShadow(
@@ -135,12 +149,18 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                                 const Positioned(
                                   right: -12,
                                   top: -8,
-                                  child: _DecorCircle(size: 14, color: Color(0x33FFD700)),
+                                  child: _DecorCircle(
+                                    size: 14,
+                                    color: Color(0x33FFD700),
+                                  ),
                                 ),
                                 const Positioned(
                                   right: -24,
                                   bottom: -8,
-                                  child: _DecorCircle(size: 9, color: Color(0x338B5E00)),
+                                  child: _DecorCircle(
+                                    size: 9,
+                                    color: Color(0x338B5E00),
+                                  ),
                                 ),
                               ],
                             ),
@@ -148,12 +168,13 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                             GridView.builder(
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                                maxCrossAxisExtent: 220,
-                                mainAxisSpacing: 16,
-                                crossAxisSpacing: 16,
-                                childAspectRatio: 0.75,
-                              ),
+                              gridDelegate:
+                                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                                    maxCrossAxisExtent: 220,
+                                    mainAxisSpacing: 16,
+                                    crossAxisSpacing: 16,
+                                    childAspectRatio: 0.75,
+                                  ),
                               itemCount: items.length,
                               itemBuilder: (context, itemIndex) {
                                 final item = items[itemIndex];
@@ -193,7 +214,7 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                           bottom: 0,
                           width: 420,
                           child: GestureDetector(
-                            onTap: () {},
+                            onTap: () => FocusScope.of(context).unfocus(),
                             child: Container(
                               decoration: const BoxDecoration(
                                 color: Color(0xFF121212),
@@ -267,7 +288,9 @@ class _MenuItemState extends State<_MenuItem> {
           ),
           boxShadow: [
             BoxShadow(
-              color: _isHovered ? goldYellow.withOpacity(0.3) : Colors.black.withOpacity(0.05),
+              color: _isHovered
+                  ? goldYellow.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.05),
               blurRadius: _isHovered ? 15 : 8,
               offset: const Offset(0, 5),
             ),
@@ -275,22 +298,37 @@ class _MenuItemState extends State<_MenuItem> {
         ),
         child: Stack(
           children: [
-            const Positioned(top: 8, right: 8, child: _DecorCircle(size: 10, color: Color(0x22FFD700))),
-            const Positioned(top: 18, right: 24, child: _DecorCircle(size: 6, color: Color(0x228B5E00))),
+            const Positioned(
+              top: 8,
+              right: 8,
+              child: _DecorCircle(size: 10, color: Color(0x22FFD700)),
+            ),
+            const Positioned(
+              top: 18,
+              right: 24,
+              child: _DecorCircle(size: 6, color: Color(0x228B5E00)),
+            ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                   child: Container(
                     height: 130,
                     width: double.infinity,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [goldYellow.withOpacity(0.1), Colors.transparent],
+                        colors: [
+                          goldYellow.withOpacity(0.1),
+                          Colors.transparent,
+                        ],
                       ),
                     ),
-                    child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
+                    child:
+                        widget.item.imageUrl != null &&
+                            widget.item.imageUrl!.isNotEmpty
                         ? Image.network(
                             widget.item.imageUrl!,
                             fit: BoxFit.cover,
@@ -298,11 +336,19 @@ class _MenuItemState extends State<_MenuItem> {
                             cacheWidth: 220,
                             filterQuality: FilterQuality.low,
                             errorBuilder: (_, __, ___) => const Center(
-                              child: Icon(Icons.fastfood, size: 40, color: Colors.grey),
+                              child: Icon(
+                                Icons.fastfood,
+                                size: 40,
+                                color: Colors.grey,
+                              ),
                             ),
                           )
                         : const Center(
-                            child: Icon(Icons.fastfood, size: 40, color: Colors.grey),
+                            child: Icon(
+                              Icons.fastfood,
+                              size: 40,
+                              color: Colors.grey,
+                            ),
                           ),
                   ),
                 ),
@@ -377,20 +423,14 @@ class _DecorCircle extends StatelessWidget {
   final double size;
   final Color color;
 
-  const _DecorCircle({
-    required this.size,
-    required this.color,
-  });
+  const _DecorCircle({required this.size, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
@@ -423,9 +463,24 @@ class _SquigglePainter extends CustomPainter {
 
     final path = Path()
       ..moveTo(0, size.height * 0.65)
-      ..quadraticBezierTo(size.width * 0.2, 0, size.width * 0.4, size.height * 0.55)
-      ..quadraticBezierTo(size.width * 0.6, size.height, size.width * 0.8, size.height * 0.45)
-      ..quadraticBezierTo(size.width * 0.9, size.height * 0.1, size.width, size.height * 0.5);
+      ..quadraticBezierTo(
+        size.width * 0.2,
+        0,
+        size.width * 0.4,
+        size.height * 0.55,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.6,
+        size.height,
+        size.width * 0.8,
+        size.height * 0.45,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.9,
+        size.height * 0.1,
+        size.width,
+        size.height * 0.5,
+      );
 
     canvas.drawPath(path, paint);
   }

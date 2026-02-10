@@ -1,9 +1,11 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../data/menu_data.dart';
 import '../../models/cart_item.dart';
+import '../../models/delivery_config.dart';
 import '../../services/analytics_service.dart';
 import '../../services/cart_service.dart';
 import '../../services/order_api_service.dart';
@@ -59,7 +61,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
             Expanded(
               child: SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
-                child: widget.cartService.items.isEmpty ? _buildEmptyState() : _buildCartItems(),
+                child: widget.cartService.items.isEmpty
+                    ? _buildEmptyState()
+                    : _buildCartItems(),
               ),
             ),
             _buildCheckoutSection(),
@@ -88,9 +92,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
           Text(
             'Your Cart',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           GestureDetector(
             onTap: _closeCart,
@@ -100,11 +104,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                 color: goldYellow.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(
-                Icons.close,
-                color: goldYellow,
-                size: 24,
-              ),
+              child: const Icon(Icons.close, color: goldYellow, size: 24),
             ),
           ),
         ],
@@ -128,7 +128,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
             children: [
               ScaleTransition(
                 scale: Tween<double>(begin: 0.95, end: 1.05).animate(
-                  CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+                  CurvedAnimation(
+                    parent: _pulseController,
+                    curve: Curves.easeInOut,
+                  ),
                 ),
                 child: Container(
                   padding: const EdgeInsets.all(18),
@@ -147,35 +150,39 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.shopping_bag, size: 48, color: Colors.black),
+                  child: const Icon(
+                    Icons.shopping_bag,
+                    size: 48,
+                    color: Colors.black,
+                  ),
                 ),
               ),
               const SizedBox(height: 18),
               Text(
                 'Your cart is empty',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                ),
               ),
               const SizedBox(height: 10),
               Text(
                 'Add some delicious items to get started.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[500],
-                      fontWeight: FontWeight.w500,
-                    ),
+                  color: Colors.grey[500],
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
                 'Popular Items',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.3,
-                    ),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                ),
               ),
               const SizedBox(height: 12),
               ..._buildPopularItems(),
@@ -193,7 +200,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
         children: List.generate(
           widget.cartService.items.length,
           (index) => Padding(
-            padding: EdgeInsets.only(bottom: index == widget.cartService.items.length - 1 ? 20 : 12),
+            padding: EdgeInsets.only(
+              bottom: index == widget.cartService.items.length - 1 ? 20 : 12,
+            ),
             child: _buildCartItem(widget.cartService.items[index]),
           ),
         ),
@@ -202,7 +211,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
   }
 
   List<Widget> _buildPopularItems() {
-    final popular = papichuloMenu.where((item) => item.rating >= 4.5).take(3).toList();
+    final popular = papichuloMenu
+        .where((item) => item.rating >= 4.5)
+        .take(3)
+        .toList();
     return popular
         .map(
           (item) => Padding(
@@ -225,10 +237,18 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                             cacheHeight: 48,
                             cacheWidth: 48,
                             filterQuality: FilterQuality.low,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.fastfood, color: Colors.grey, size: 20),
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.fastfood,
+                              color: Colors.grey,
+                              size: 20,
+                            ),
                           ),
                         )
-                      : const Icon(Icons.fastfood, color: Colors.grey, size: 20),
+                      : const Icon(
+                          Icons.fastfood,
+                          color: Colors.grey,
+                          size: 20,
+                        ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -240,16 +260,16 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       Text(
                         'Rs ${item.price.toStringAsFixed(0)}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: goldYellow,
-                              fontWeight: FontWeight.w700,
-                            ),
+                          color: goldYellow,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ],
                   ),
@@ -257,7 +277,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                 GestureDetector(
                   onTap: () => widget.cartService.addItem(item),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: goldYellow,
                       borderRadius: BorderRadius.circular(6),
@@ -271,9 +294,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     child: Text(
                       'Add',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        color: Colors.black,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -314,7 +337,11 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                           cacheHeight: 64,
                           cacheWidth: 64,
                           filterQuality: FilterQuality.low,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.fastfood, color: Colors.grey, size: 28),
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.fastfood,
+                            color: Colors.grey,
+                            size: 28,
+                          ),
                         ),
                       )
                     : const Icon(Icons.fastfood, color: Colors.grey, size: 28),
@@ -329,20 +356,20 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.3,
-                            fontSize: 14,
-                          ),
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                        fontSize: 14,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'Rs ${cartItem.foodItem.price.toStringAsFixed(2)}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: goldYellow,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
+                        color: goldYellow,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
@@ -361,9 +388,14 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     GestureDetector(
                       onTap: () => cartItem.quantity == 1
                           ? widget.cartService.removeItem(cartItem.foodItem)
-                          : widget.cartService.updateQuantity(cartItem.foodItem, cartItem.quantity - 1),
+                          : widget.cartService.updateQuantity(
+                              cartItem.foodItem,
+                              cartItem.quantity - 1,
+                            ),
                       child: Icon(
-                        cartItem.quantity == 1 ? Icons.delete_outline : Icons.remove,
+                        cartItem.quantity == 1
+                            ? Icons.delete_outline
+                            : Icons.remove,
                         color: goldYellow,
                         size: 18,
                       ),
@@ -373,19 +405,18 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       child: Text(
                         '${cartItem.quantity}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: goldYellow,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
+                          color: goldYellow,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                     GestureDetector(
-                      onTap: () => widget.cartService.updateQuantity(cartItem.foodItem, cartItem.quantity + 1),
-                      child: const Icon(
-                        Icons.add,
-                        color: goldYellow,
-                        size: 18,
+                      onTap: () => widget.cartService.updateQuantity(
+                        cartItem.foodItem,
+                        cartItem.quantity + 1,
                       ),
+                      child: const Icon(Icons.add, color: goldYellow, size: 18),
                     ),
                   ],
                 ),
@@ -399,18 +430,18 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
               Text(
                 'Subtotal:',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[500],
-                      fontWeight: FontWeight.w500,
-                      fontSize: 12,
-                    ),
+                  color: Colors.grey[500],
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
               ),
               Text(
                 'Rs ${cartItem.totalPrice.toStringAsFixed(2)}',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: goldYellow,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
+                  color: goldYellow,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),
@@ -425,9 +456,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: darkBg,
-        border: Border(
-          top: BorderSide(color: goldYellow.withOpacity(0.15)),
-        ),
+        border: Border(top: BorderSide(color: goldYellow.withOpacity(0.15))),
       ),
       child: Column(
         children: [
@@ -439,16 +468,19 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                 Text(
                   'Rs ${widget.cartService.totalAmount.toStringAsFixed(2)}',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        color: goldYellow,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                        fontSize: 22,
-                      ),
+                    color: goldYellow,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                    fontSize: 22,
+                  ),
                 ),
                 GestureDetector(
                   onTap: _showCheckoutDialog,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: goldYellow,
                       borderRadius: BorderRadius.circular(8),
@@ -465,7 +497,8 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       children: [
                         Text(
                           'Checkout',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
                                 color: Colors.black,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -0.3,
@@ -473,7 +506,11 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                               ),
                         ),
                         const SizedBox(width: 8),
-                        const Icon(Icons.arrow_forward, color: Colors.black, size: 18),
+                        const Icon(
+                          Icons.arrow_forward,
+                          color: Colors.black,
+                          size: 18,
+                        ),
                       ],
                     ),
                   ),
@@ -502,11 +539,11 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     'Browse Menu',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.3,
-                          fontSize: 15,
-                        ),
+                      color: Colors.black,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
               ),
@@ -516,12 +553,33 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     );
   }
 
-  void _showCheckoutDialog() {
+  Future<void> _showCheckoutDialog() async {
+    DeliveryConfig deliveryConfig;
+    try {
+      deliveryConfig = await _orderApi.fetchDeliveryConfig();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load delivery settings: $error'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
     final addressController = TextEditingController();
     var paymentMethod = 'COD';
+    var isFetchingLocation = false;
+    var locationStatus =
+        'Delivery radius: ${deliveryConfig.radiusKm.toStringAsFixed(1)} km';
+    double? selectedLat;
+    double? selectedLng;
+    double? deliveryDistanceKm;
+    var withinDeliveryBoundary = false;
 
     showDialog(
       context: context,
@@ -536,10 +594,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
               title: Text(
                 'Checkout',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: goldYellow,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
+                  color: goldYellow,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                ),
               ),
               content: SizedBox(
                 width: 420,
@@ -552,7 +610,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         controller: nameController,
                         label: 'Name',
                         icon: Icons.person_outline,
-                        validator: (v) => (v == null || v.trim().length < 2) ? 'Enter a valid name' : null,
+                        validator: (v) => (v == null || v.trim().length < 2)
+                            ? 'Enter a valid name'
+                            : null,
                       ),
                       const SizedBox(height: 10),
                       _buildCheckoutInput(
@@ -563,7 +623,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         validator: (v) {
                           final value = (v ?? '').trim();
                           final digits = value.replaceAll(RegExp(r'\D'), '');
-                          return digits.length < 10 ? 'Enter a valid phone number' : null;
+                          return digits.length < 10
+                              ? 'Enter a valid phone number'
+                              : null;
                         },
                       ),
                       const SizedBox(height: 10),
@@ -572,13 +634,195 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         label: 'Address',
                         icon: Icons.location_on_outlined,
                         maxLines: 2,
-                        validator: (v) => (v == null || v.trim().length < 8) ? 'Enter full delivery address' : null,
+                        validator: (v) => (v == null || v.trim().length < 8)
+                            ? 'Enter full delivery address'
+                            : null,
                       ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              locationStatus.isEmpty
+                                  ? 'Use location or validate typed address.'
+                                  : locationStatus,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color:
+                                        locationStatus.startsWith(
+                                          'Location detected',
+                                        )
+                                        ? Colors.greenAccent.shade200
+                                        : Colors.grey[400],
+                                  ),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: isFetchingLocation
+                                ? null
+                                : () async {
+                                    setDialogState(() {
+                                      isFetchingLocation = true;
+                                      locationStatus =
+                                          'Requesting location permission...';
+                                    });
+                                    try {
+                                      final result =
+                                          await _resolveCurrentLocationLabel();
+                                      selectedLat = result.latitude;
+                                      selectedLng = result.longitude;
+                                      deliveryDistanceKm = _calculateDistanceKm(
+                                        storeLatitude:
+                                            deliveryConfig.storeLatitude,
+                                        storeLongitude:
+                                            deliveryConfig.storeLongitude,
+                                        latitude: result.latitude,
+                                        longitude: result.longitude,
+                                      );
+                                      withinDeliveryBoundary =
+                                          deliveryDistanceKm! <=
+                                          deliveryConfig.radiusKm;
+                                      addressController.text = result.label;
+                                      setDialogState(() {
+                                        isFetchingLocation = false;
+                                        locationStatus = withinDeliveryBoundary
+                                            ? 'Location detected. Delivery available in your area.'
+                                            : 'Location detected, but this address is outside delivery zone.';
+                                      });
+                                    } catch (error) {
+                                      setDialogState(() {
+                                        isFetchingLocation = false;
+                                        locationStatus = _friendlyLocationError(
+                                          error,
+                                        );
+                                      });
+                                    }
+                                  },
+                            icon: isFetchingLocation
+                                ? SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: goldYellow,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.my_location,
+                                    size: 16,
+                                    color: goldYellow,
+                                  ),
+                            label: Text(
+                              isFetchingLocation
+                                  ? 'Detecting...'
+                                  : 'Use location',
+                              style: TextStyle(color: goldYellow),
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: isFetchingLocation
+                                ? null
+                                : () async {
+                                    final typedAddress = addressController.text
+                                        .trim();
+                                    if (typedAddress.length < 8) {
+                                      setDialogState(() {
+                                        locationStatus =
+                                            'Enter full address, then validate.';
+                                      });
+                                      return;
+                                    }
+                                    setDialogState(() {
+                                      isFetchingLocation = true;
+                                      locationStatus =
+                                          'Validating typed address...';
+                                    });
+                                    try {
+                                      final geocoded = await _orderApi
+                                          .geocodeAddress(typedAddress);
+                                      selectedLat = geocoded.latitude;
+                                      selectedLng = geocoded.longitude;
+                                      deliveryDistanceKm = _calculateDistanceKm(
+                                        storeLatitude:
+                                            deliveryConfig.storeLatitude,
+                                        storeLongitude:
+                                            deliveryConfig.storeLongitude,
+                                        latitude: geocoded.latitude,
+                                        longitude: geocoded.longitude,
+                                      );
+                                      withinDeliveryBoundary =
+                                          deliveryDistanceKm! <=
+                                          deliveryConfig.radiusKm;
+                                      setDialogState(() {
+                                        isFetchingLocation = false;
+                                        locationStatus = withinDeliveryBoundary
+                                            ? 'Address validated. Delivery available.'
+                                            : 'Address validated, but outside delivery zone.';
+                                      });
+                                    } catch (error) {
+                                      setDialogState(() {
+                                        isFetchingLocation = false;
+                                        locationStatus = _friendlyLocationError(
+                                          error,
+                                        );
+                                      });
+                                    }
+                                  },
+                            icon: Icon(
+                              Icons.verified_outlined,
+                              size: 16,
+                              color: goldYellow,
+                            ),
+                            label: Text(
+                              'Validate address',
+                              style: TextStyle(color: goldYellow),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (deliveryDistanceKm != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: withinDeliveryBoundary
+                                ? Colors.green.withOpacity(0.12)
+                                : Colors.red.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: withinDeliveryBoundary
+                                  ? Colors.greenAccent.withOpacity(0.45)
+                                  : Colors.redAccent.withOpacity(0.45),
+                            ),
+                          ),
+                          child: Text(
+                            withinDeliveryBoundary
+                                ? 'Delivery available (${deliveryDistanceKm!.toStringAsFixed(1)} km from store)'
+                                : 'Outside delivery zone (${deliveryDistanceKm!.toStringAsFixed(1)} km, max ${deliveryConfig.radiusKm.toStringAsFixed(1)} km)',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: withinDeliveryBoundary
+                                      ? Colors.greenAccent.shade100
+                                      : Colors.redAccent.shade100,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
-                          border: Border.all(color: goldYellow.withOpacity(0.2)),
+                          border: Border.all(
+                            color: goldYellow.withOpacity(0.2),
+                          ),
                           borderRadius: BorderRadius.circular(10),
                           color: darkBg,
                         ),
@@ -593,9 +837,14 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                                 activeColor: goldYellow,
                                 title: Text(
                                   'COD',
-                                  style: TextStyle(color: Colors.grey[200], fontSize: 13),
+                                  style: TextStyle(
+                                    color: Colors.grey[200],
+                                    fontSize: 13,
+                                  ),
                                 ),
-                                onChanged: (v) => setDialogState(() => paymentMethod = v ?? 'COD'),
+                                onChanged: (v) => setDialogState(
+                                  () => paymentMethod = v ?? 'COD',
+                                ),
                               ),
                             ),
                             Expanded(
@@ -607,9 +856,14 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                                 activeColor: goldYellow,
                                 title: Text(
                                   'Mock Payment',
-                                  style: TextStyle(color: Colors.grey[200], fontSize: 13),
+                                  style: TextStyle(
+                                    color: Colors.grey[200],
+                                    fontSize: 13,
+                                  ),
                                 ),
-                                onChanged: (v) => setDialogState(() => paymentMethod = v ?? 'MOCK_ONLINE'),
+                                onChanged: (v) => setDialogState(
+                                  () => paymentMethod = v ?? 'MOCK_ONLINE',
+                                ),
                               ),
                             ),
                           ],
@@ -621,14 +875,16 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         children: [
                           Text(
                             'Total',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
                                   color: Colors.grey[300],
                                   fontWeight: FontWeight.w600,
                                 ),
                           ),
                           Text(
                             'Rs ${widget.cartService.totalAmount.toStringAsFixed(2)}',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
                                   color: goldYellow,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -650,13 +906,39 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                 GestureDetector(
                   onTap: () async {
                     if (!formKey.currentState!.validate()) return;
+                    if (selectedLat == null || selectedLng == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Use location or validate typed address first.',
+                          ),
+                          backgroundColor: Colors.orangeAccent,
+                        ),
+                      );
+                      return;
+                    }
+                    if (!withinDeliveryBoundary) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Sorry, delivery is available only within ${deliveryConfig.radiusKm.toStringAsFixed(1)} km.',
+                          ),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                      return;
+                    }
 
-                    final paymentLabel = paymentMethod == 'COD' ? 'Cash on Delivery' : 'Mock Online Payment';
+                    final paymentLabel = paymentMethod == 'COD'
+                        ? 'Cash on Delivery'
+                        : 'Mock Online Payment';
                     try {
                       final order = await _orderApi.createOrder(
                         customerName: nameController.text.trim(),
                         phone: phoneController.text.trim(),
                         address: addressController.text.trim(),
+                        latitude: selectedLat!,
+                        longitude: selectedLng!,
                         paymentMethod: paymentLabel,
                         items: widget.cartService.items,
                         totalAmount: widget.cartService.totalAmount,
@@ -674,7 +956,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       );
                       Navigator.pop(dialogContext);
                       await _showOrderSuccessDialog(
-                        orderId: order.id.isEmpty ? _generateOrderId() : order.id,
+                        orderId: order.id.isEmpty
+                            ? _generateOrderId()
+                            : order.id,
                         customerName: nameController.text.trim(),
                         paymentMethodLabel: paymentLabel,
                       );
@@ -700,7 +984,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Backend unavailable. Order saved locally as mock order.'),
+                            content: Text(
+                              'Backend unavailable. Order saved locally as mock order.',
+                            ),
                             backgroundColor: Colors.orange,
                           ),
                         );
@@ -715,7 +1001,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: goldYellow,
                       borderRadius: BorderRadius.circular(8),
@@ -723,10 +1012,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     child: Text(
                       'Place Order',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.3,
-                          ),
+                        color: Colors.black,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                      ),
                     ),
                   ),
                 ),
@@ -736,6 +1025,67 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  Future<_LocationResult> _resolveCurrentLocationLabel() async {
+    final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!isServiceEnabled) {
+      throw Exception(
+        'Location services are disabled. Turn on GPS/location and try again.',
+      );
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied) {
+      throw Exception('Location permission denied.');
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      throw Exception(
+        'Location permission is permanently denied. Enable it from browser/system settings.',
+      );
+    }
+
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    );
+
+    return _LocationResult(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      label:
+          'Lat ${position.latitude.toStringAsFixed(5)}, Lng ${position.longitude.toStringAsFixed(5)}',
+    );
+  }
+
+  double _calculateDistanceKm({
+    required double storeLatitude,
+    required double storeLongitude,
+    required double latitude,
+    required double longitude,
+  }) {
+    final meters = Geolocator.distanceBetween(
+      storeLatitude,
+      storeLongitude,
+      latitude,
+      longitude,
+    );
+    return meters / 1000.0;
+  }
+
+  String _friendlyLocationError(Object error) {
+    final raw = error.toString();
+    if (raw.contains('permission') || raw.contains('denied')) {
+      return 'Location permission denied. Please allow access and retry.';
+    }
+    if (raw.contains('services are disabled')) {
+      return 'Location services are off. Enable location and retry.';
+    }
+    return 'Unable to detect location right now. Please enter address manually.';
   }
 
   Widget _buildCheckoutInput({
@@ -779,7 +1129,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
   }
 
   String _generateOrderId() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch.toString().substring(7);
+    final timestamp = DateTime.now().millisecondsSinceEpoch
+        .toString()
+        .substring(7);
     final randomPart = (1000 + Random().nextInt(9000)).toString();
     return 'PC$timestamp$randomPart';
   }
@@ -802,10 +1154,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
             Text(
               'Order Placed',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: goldYellow,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
-                  ),
+                color: goldYellow,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+              ),
             ),
           ],
         ),
@@ -815,12 +1167,18 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
           children: [
             Text(
               'Thanks, $customerName!',
-              style: TextStyle(color: Colors.grey[200], fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.grey[200],
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Order ID: $orderId',
-              style: const TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: goldYellow,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -830,7 +1188,10 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
             const SizedBox(height: 6),
             Text(
               'Total: Rs ${widget.cartService.totalAmount.toStringAsFixed(2)}',
-              style: TextStyle(color: Colors.grey[100], fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.grey[100],
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -850,9 +1211,9 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
               child: Text(
                 'Done',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  color: Colors.black,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
@@ -871,4 +1232,16 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     }
     return 'Could not place order right now. Please try again.';
   }
+}
+
+class _LocationResult {
+  final double latitude;
+  final double longitude;
+  final String label;
+
+  const _LocationResult({
+    required this.latitude,
+    required this.longitude,
+    required this.label,
+  });
 }

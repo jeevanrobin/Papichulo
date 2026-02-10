@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/delivery_config.dart';
 import '../../models/order_record.dart';
 import '../../services/analytics_service.dart';
 import '../../services/order_api_service.dart';
@@ -18,19 +19,87 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
 
   final OrderApiService _api = OrderApiService();
   late Future<List<OrderRecord>> _ordersFuture;
+  late Future<DeliveryConfig> _configFuture;
+  final TextEditingController _radiusController = TextEditingController();
+  final TextEditingController _storeLatController = TextEditingController();
+  final TextEditingController _storeLngController = TextEditingController();
+  bool _savingConfig = false;
 
   @override
   void initState() {
     super.initState();
     AnalyticsService().track('page_view', params: {'screen': 'admin_orders'});
     _ordersFuture = _api.fetchOrders();
+    _configFuture = _api.fetchDeliveryConfig();
   }
 
   Future<void> _refresh() async {
     setState(() {
       _ordersFuture = _api.fetchOrders();
+      _configFuture = _api.fetchDeliveryConfig();
     });
-    await _ordersFuture;
+    await Future.wait([_ordersFuture, _configFuture]);
+  }
+
+  @override
+  void dispose() {
+    _radiusController.dispose();
+    _storeLatController.dispose();
+    _storeLngController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveDeliveryConfig() async {
+    final radius = double.tryParse(_radiusController.text.trim());
+    final storeLat = double.tryParse(_storeLatController.text.trim());
+    final storeLng = double.tryParse(_storeLngController.text.trim());
+
+    if (radius == null ||
+        radius <= 0 ||
+        radius > 50 ||
+        storeLat == null ||
+        storeLng == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enter valid store coordinates and delivery radius (1-50 km).',
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _savingConfig = true);
+    try {
+      final updated = await _api.updateDeliveryConfig(
+        storeLatitude: storeLat,
+        storeLongitude: storeLng,
+        radiusKm: radius,
+      );
+      if (!mounted) return;
+      setState(() {
+        _configFuture = Future.value(updated);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Delivery settings updated.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save delivery settings: $error'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _savingConfig = false);
+      }
+    }
   }
 
   @override
@@ -49,129 +118,309 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
         ],
       ),
       backgroundColor: darkGrey,
-      body: FutureBuilder<List<OrderRecord>>(
-        future: _ordersFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.redAccent, size: 34),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Failed to load orders',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: FutureBuilder<DeliveryConfig>(
+              future: _configFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const LinearProgressIndicator();
+                }
+                if (snapshot.hasError || snapshot.data == null) {
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF222222),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.redAccent.withOpacity(0.35),
+                      ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${snapshot.error}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey[400]),
+                    child: Text(
+                      'Could not load delivery config: ${snapshot.error}',
+                      style: const TextStyle(color: Colors.white),
                     ),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      onPressed: _refresh,
-                      child: const Text('Try again'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
+                  );
+                }
 
-          final orders = snapshot.data ?? const <OrderRecord>[];
-          if (orders.isEmpty) {
-            return Center(
-              child: Text(
-                'No incoming orders yet.',
-                style: TextStyle(color: Colors.grey[300], fontSize: 16),
-              ),
-            );
-          }
+                final config = snapshot.data!;
+                if (_radiusController.text.isEmpty) {
+                  _radiusController.text = config.radiusKm.toStringAsFixed(1);
+                }
+                if (_storeLatController.text.isEmpty) {
+                  _storeLatController.text = config.storeLatitude
+                      .toStringAsFixed(6);
+                }
+                if (_storeLngController.text.isEmpty) {
+                  _storeLngController.text = config.storeLongitude
+                      .toStringAsFixed(6);
+                }
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: orders.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final order = orders[index];
                 return Container(
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: const Color(0xFF222222),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: goldYellow.withOpacity(0.2)),
+                    border: Border.all(color: goldYellow.withOpacity(0.25)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const Text(
+                        'Delivery Settings',
+                        style: TextStyle(
+                          color: goldYellow,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              'Order ${order.id}',
-                              style: const TextStyle(
-                                color: goldYellow,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
+                            child: _field(
+                              _radiusController,
+                              'Radius (km)',
+                              const TextInputType.numberWithOptions(
+                                decimal: true,
                               ),
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: goldYellow.withOpacity(0.18),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              order.status.toUpperCase(),
-                              style: const TextStyle(
-                                color: goldYellow,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _field(
+                              _storeLatController,
+                              'Store Lat',
+                              const TextInputType.numberWithOptions(
+                                decimal: true,
+                                signed: true,
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Customer: ${order.customerName}', style: TextStyle(color: Colors.grey[200])),
-                      Text('Phone: ${order.phone}', style: TextStyle(color: Colors.grey[200])),
-                      Text('Address: ${order.address}', style: TextStyle(color: Colors.grey[300])),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text(
-                            'Items: ${order.itemCount}',
-                            style: TextStyle(color: Colors.grey[300], fontWeight: FontWeight.w600),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _field(
+                              _storeLngController,
+                              'Store Lng',
+                              const TextInputType.numberWithOptions(
+                                decimal: true,
+                                signed: true,
+                              ),
+                            ),
                           ),
-                          const SizedBox(width: 16),
-                          Text(
-                            'Total: Rs ${order.totalAmount.toStringAsFixed(2)}',
-                            style: const TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            height: 44,
+                            child: ElevatedButton(
+                              onPressed: _savingConfig
+                                  ? null
+                                  : _saveDeliveryConfig,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: goldYellow,
+                                foregroundColor: Colors.black,
+                              ),
+                              child: _savingConfig
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('Save'),
+                            ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Placed: ${order.createdAt.toLocal()}',
-                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
                       ),
                     ],
                   ),
                 );
               },
             ),
-          );
-        },
+          ),
+          Expanded(
+            child: FutureBuilder<List<OrderRecord>>(
+              future: _ordersFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            color: Colors.redAccent,
+                            size: 34,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Failed to load orders',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: Colors.white),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey[400]),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            onPressed: _refresh,
+                            child: const Text('Try again'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                final orders = snapshot.data ?? const <OrderRecord>[];
+                if (orders.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'No incoming orders yet.',
+                      style: TextStyle(color: Colors.grey[300], fontSize: 16),
+                    ),
+                  );
+                }
+
+                return RefreshIndicator(
+                  onRefresh: _refresh,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: orders.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final order = orders[index];
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF222222),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: goldYellow.withOpacity(0.2),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Order ${order.id}',
+                                    style: const TextStyle(
+                                      color: goldYellow,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: goldYellow.withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    order.status.toUpperCase(),
+                                    style: const TextStyle(
+                                      color: goldYellow,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Customer: ${order.customerName}',
+                              style: TextStyle(color: Colors.grey[200]),
+                            ),
+                            Text(
+                              'Phone: ${order.phone}',
+                              style: TextStyle(color: Colors.grey[200]),
+                            ),
+                            Text(
+                              'Address: ${order.address}',
+                              style: TextStyle(color: Colors.grey[300]),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Text(
+                                  'Items: ${order.itemCount}',
+                                  style: TextStyle(
+                                    color: Colors.grey[300],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Text(
+                                  'Total: Rs ${order.totalAmount.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: goldYellow,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Placed: ${order.createdAt.toLocal()}',
+                              style: TextStyle(
+                                color: Colors.grey[500],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(
+    TextEditingController controller,
+    String label,
+    TextInputType inputType,
+  ) {
+    return TextField(
+      controller: controller,
+      keyboardType: inputType,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.grey[400]),
+        filled: true,
+        fillColor: Colors.black,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: goldYellow.withOpacity(0.2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: goldYellow),
+        ),
       ),
     );
   }

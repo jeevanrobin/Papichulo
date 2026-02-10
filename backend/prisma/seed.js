@@ -5,6 +5,17 @@ const path = require('path');
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.deliveryConfig.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      storeLatitude: 17.385044,
+      storeLongitude: 78.486671,
+      radiusKm: 10,
+    },
+  });
+
   const count = await prisma.menuItem.count();
   if (count > 0) {
     console.log('Menu already seeded');

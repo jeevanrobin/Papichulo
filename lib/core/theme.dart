@@ -5,20 +5,22 @@ class AppTheme {
   static const Color darkGold = Color(0xFFB8860B);
   static const Color black = Color(0xFF000000);
   static const Color darkGrey = Color(0xFF1A1A1A);
-  
+
   static ThemeData get theme {
     return ThemeData(
       useMaterial3: true,
+      scaffoldBackgroundColor: const Color(0xFF0A0A0A),
       colorScheme: ColorScheme.fromSeed(
         seedColor: goldYellow,
-        brightness: Brightness.light,
+        brightness: Brightness.dark,
         primary: goldYellow,
         secondary: darkGold,
-        surface: Colors.white,
-        onSurface: black,
+        surface: const Color(0xFF161616),
+        onSurface: Colors.white,
       ),
+      fontFamily: 'Segoe UI',
       appBarTheme: AppBarTheme(
-        backgroundColor: black,
+        backgroundColor: const Color(0xFF0A0A0A),
         foregroundColor: goldYellow,
         centerTitle: true,
         elevation: 0,
@@ -81,11 +83,11 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: goldYellow,
+          backgroundColor: const Color(0xFFFFD84D),
           foregroundColor: black,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
