@@ -1,10 +1,17 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/menu_data.dart';
 import '../../widgets/fly_to_cart_button.dart';
 import '../../widgets/animated_cart_icon.dart';
 import '../../services/analytics_service.dart';
+import '../../services/api_config.dart';
+import '../../services/auth_service.dart';
+import '../../services/order_api_service.dart';
+import '../../services/order_alert_service.dart';
+import '../orders/user_orders_screen.dart';
 import '../menu/menu_screen.dart';
 import '../admin/orders_admin_screen.dart';
 import '../cart/cart_drawer.dart';
@@ -31,6 +38,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _cardStagger;
   final Map<int, bool> _hoveredCards = {};
   late GlobalKey _cartIconKey;
+  final OrderApiService _orderApi = OrderApiService();
+  String _headerLocationLabel = 'Detecting location...';
+  bool _isHeaderLocationLoading = false;
+  static const String _guestDisplayName = 'Guest';
 
   String _selectedCategory = 'Pizza';
   final List<String> _categories = [
@@ -73,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ).animate(CurvedAnimation(parent: _cardController, curve: Curves.easeOut));
 
     _startAnimations();
+    _detectHeaderLocation();
   }
 
   void _startAnimations() async {
@@ -81,6 +93,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _heroController.forward();
     await Future.delayed(const Duration(milliseconds: 150));
     _cardController.forward();
+  }
+
+  Future<void> _detectHeaderLocation() async {
+    if (_isHeaderLocationLoading) return;
+    setState(() => _isHeaderLocationLoading = true);
+
+    var nextLabel = _headerLocationLabel;
+    try {
+      final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!isServiceEnabled) {
+        throw Exception('Location services disabled');
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw Exception('Location permission denied');
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+      nextLabel = await _orderApi.reverseGeocode(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+    } catch (_) {
+      if (_headerLocationLabel == 'Detecting location...') {
+        nextLabel = 'Set location';
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isHeaderLocationLoading = false;
+      _headerLocationLabel = nextLabel.trim().isEmpty
+          ? 'Set location'
+          : nextLabel;
+    });
   }
 
   @override
@@ -129,6 +186,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Consumer<CartProvider>(
             builder: (context, cartProvider, _) {
               if (!cartProvider.isCartOpen) return const SizedBox();
+              final drawerWidth = _getCartWidth(context);
               return Positioned(
                 top: 0,
                 right: 0,
@@ -137,17 +195,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => cartProvider.closeCart(),
-                        child: Container(color: Colors.black54),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => cartProvider.closeCart(),
+                              child: Container(color: Colors.black54),
+                            ),
+                          ),
+                          SizedBox(width: drawerWidth),
+                        ],
                       ),
                     ),
                     Positioned(
                       top: 0,
                       right: 0,
                       bottom: 0,
-                      width: 420,
+                      width: drawerWidth,
                       child: Container(
                         decoration: const BoxDecoration(
                           color: Color(0xFF121212),
@@ -156,9 +221,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             bottomLeft: Radius.circular(16),
                           ),
                         ),
-                        child: CartDrawer(
-                          cartService: cartProvider.cartService,
-                          onClose: () => cartProvider.closeCart(),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {},
+                          child: CartDrawer(
+                            cartService: cartProvider.cartService,
+                            onClose: () => cartProvider.closeCart(),
+                          ),
                         ),
                       ),
                     ),
@@ -176,6 +245,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return AnimatedBuilder(
       animation: _headerSlide,
       builder: (context, child) {
+        final showHeaderLocation = MediaQuery.of(context).size.width >= 1060;
         return Transform.translate(
           offset: Offset(0, _headerSlide.value),
           child: RepaintBoundary(
@@ -201,28 +271,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  TweenAnimationBuilder(
-                    duration: const Duration(milliseconds: 1000),
-                    tween: Tween<double>(begin: 0, end: 1),
-                    builder: (context, value, child) {
-                      return Transform.scale(
-                        scale: value,
-                        child: ShaderMask(
-                          shaderCallback: (bounds) => LinearGradient(
-                            colors: [goldYellow, darkGold],
-                          ).createShader(bounds),
-                          child: const Text(
-                            'PAPICHULO',
-                            style: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                              letterSpacing: 2.4,
+                  Row(
+                    children: [
+                      TweenAnimationBuilder(
+                        duration: const Duration(milliseconds: 1000),
+                        tween: Tween<double>(begin: 0, end: 1),
+                        builder: (context, value, child) {
+                          return Transform.scale(
+                            scale: value,
+                            child: ShaderMask(
+                              shaderCallback: (bounds) => LinearGradient(
+                                colors: [goldYellow, darkGold],
+                              ).createShader(bounds),
+                              child: const Text(
+                                'PAPICHULO',
+                                style: TextStyle(
+                                  fontSize: 30,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                  letterSpacing: 2.4,
+                                ),
+                              ),
                             ),
-                          ),
+                          );
+                        },
+                      ),
+                      if (showHeaderLocation) ...[
+                        const SizedBox(width: 20),
+                        _HeaderLocationChip(
+                          label: _headerLocationLabel,
+                          isLoading: _isHeaderLocationLoading,
+                          onTap: _detectHeaderLocation,
                         ),
-                      );
-                    },
+                      ],
+                    ],
                   ),
                   Row(
                     children: [
@@ -236,11 +318,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       const SizedBox(width: 20),
                       _buildAnimatedNavItem(
                         'Admin',
-                        () => Navigator.push(
-                          context,
-                          _createRoute(const OrdersAdminScreen()),
-                        ),
+                        _openAdminOrders,
+                        badgeCountListenable:
+                            OrderAlertService.instance.pendingNewOrderCount,
                       ),
+                      const SizedBox(width: 20),
+                      _buildUserProfileMenu(),
                       const SizedBox(width: 20),
                       _buildAnimatedCartIcon(),
                       const SizedBox(width: 20),
@@ -256,8 +339,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildAnimatedNavItem(String text, VoidCallback onTap) {
-    return _NavItemWidget(text: text, onTap: onTap);
+  Widget _buildAnimatedNavItem(
+    String text,
+    VoidCallback onTap, {
+    ValueListenable<int>? badgeCountListenable,
+  }) {
+    if (badgeCountListenable == null) {
+      return _NavItemWidget(text: text, onTap: onTap);
+    }
+    return ValueListenableBuilder<int>(
+      valueListenable: badgeCountListenable,
+      builder: (context, pendingCount, _) {
+        return _NavItemWidget(
+          text: text,
+          onTap: onTap,
+          badgeCount: pendingCount,
+        );
+      },
+    );
   }
 
   Widget _buildAnimatedCartIcon() {
@@ -270,6 +369,381 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildHeaderCTA() {
     return _HeaderCTAWidget(
       onTap: () => Navigator.push(context, _createRoute(const MenuScreen())),
+    );
+  }
+
+  void _openAdminOrders() {
+    final auth = context.read<AuthService>();
+    final canOpen = auth.isAdmin || ApiConfig.adminKey.isNotEmpty;
+    if (canOpen) {
+      Navigator.push(context, _createRoute(const OrdersAdminScreen()));
+      return;
+    }
+    _showAuthDialog(adminRequired: true);
+  }
+
+  Future<void> _handleProfileMenuSelection(_ProfileMenuAction action) async {
+    final auth = context.read<AuthService>();
+    switch (action) {
+      case _ProfileMenuAction.login:
+        _showAuthDialog();
+        break;
+      case _ProfileMenuAction.signup:
+        _showAuthDialog(startWithSignup: true);
+        break;
+      case _ProfileMenuAction.profile:
+        _showUserInfoDialog(
+          title: 'Profile',
+          message: auth.isAuthenticated
+              ? 'Name: ${auth.user?.name ?? '-'}\nEmail: ${auth.user?.email ?? '-'}\nPhone: ${auth.user?.phone ?? '-'}'
+              : 'Please login to view profile.',
+        );
+        break;
+      case _ProfileMenuAction.orders:
+        if (!auth.isAuthenticated) {
+          _showAuthDialog();
+          return;
+        }
+        Navigator.push(context, _createRoute(const UserOrdersScreen()));
+        break;
+      case _ProfileMenuAction.membership:
+        _showUserInfoDialog(
+          title: 'Papichulo One',
+          message:
+              'Membership benefits (free delivery and member deals) will be available in the next release.',
+        );
+        break;
+      case _ProfileMenuAction.favourites:
+        _showUserInfoDialog(
+          title: 'Favourites',
+          message:
+              'Save your favourite items for one-tap reorder. This section will be enabled soon.',
+        );
+        break;
+      case _ProfileMenuAction.logout:
+        context.read<CartProvider>().cartService.clearCart();
+        await auth.logout();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You have been logged out.'),
+            backgroundColor: Colors.black87,
+          ),
+        );
+        break;
+    }
+  }
+
+  Future<void> _showAuthDialog({
+    bool startWithSignup = false,
+    bool adminRequired = false,
+  }) async {
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    var isSignup = startWithSignup;
+    var isBusy = false;
+    String? errorText;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !isBusy,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> submit() async {
+              final valid = formKey.currentState?.validate() ?? false;
+              if (!valid || isBusy) return;
+
+              setDialogState(() {
+                isBusy = true;
+                errorText = null;
+              });
+              try {
+                final auth = context.read<AuthService>();
+                if (isSignup) {
+                  await auth.signup(
+                    name: nameController.text.trim(),
+                    email: emailController.text.trim(),
+                    phone: phoneController.text.trim(),
+                    password: passwordController.text,
+                  );
+                } else {
+                  await auth.login(
+                    email: emailController.text.trim(),
+                    password: passwordController.text,
+                  );
+                }
+                if (!mounted) return;
+                if (adminRequired &&
+                    !(auth.isAdmin || ApiConfig.adminKey.isNotEmpty)) {
+                  setDialogState(() {
+                    errorText = 'Logged in, but this account is not admin.';
+                    isBusy = false;
+                  });
+                  return;
+                }
+                Navigator.pop(dialogContext);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      isSignup
+                          ? 'Account created successfully.'
+                          : 'Logged in successfully.',
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                if (adminRequired) {
+                  _openAdminOrders();
+                }
+              } catch (error) {
+                setDialogState(() {
+                  errorText = error.toString().replaceFirst('Exception: ', '');
+                  isBusy = false;
+                });
+              }
+            }
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1F1F1F),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              title: Text(
+                isSignup ? 'Create account' : 'Login',
+                style: const TextStyle(
+                  color: goldYellow,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: Form(
+                key: formKey,
+                child: SizedBox(
+                  width: 380,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isSignup) ...[
+                        TextFormField(
+                          controller: nameController,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: const InputDecoration(
+                            labelText: 'Name',
+                            labelStyle: TextStyle(color: Colors.white70),
+                          ),
+                          validator: (v) => (v == null || v.trim().length < 2)
+                              ? 'Enter a valid name'
+                              : null,
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: phoneController,
+                          style: const TextStyle(color: Colors.white),
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'Phone',
+                            labelStyle: TextStyle(color: Colors.white70),
+                          ),
+                          validator: (v) => (v == null || v.trim().length < 10)
+                              ? 'Enter a valid phone'
+                              : null,
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      TextFormField(
+                        controller: emailController,
+                        style: const TextStyle(color: Colors.white),
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          labelStyle: TextStyle(color: Colors.white70),
+                        ),
+                        validator: (v) => (v == null || !v.contains('@'))
+                            ? 'Enter a valid email'
+                            : null,
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: passwordController,
+                        style: const TextStyle(color: Colors.white),
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Password',
+                          labelStyle: TextStyle(color: Colors.white70),
+                        ),
+                        validator: (v) => (v == null || v.length < 6)
+                            ? 'Min 6 characters'
+                            : null,
+                      ),
+                      if (errorText != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          errorText!,
+                          style: const TextStyle(color: Colors.redAccent),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isBusy ? null : () => Navigator.pop(dialogContext),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+                TextButton(
+                  onPressed: isBusy
+                      ? null
+                      : () {
+                          setDialogState(() {
+                            isSignup = !isSignup;
+                            errorText = null;
+                          });
+                        },
+                  child: Text(
+                    isSignup ? 'Have an account? Login' : 'Create account',
+                    style: const TextStyle(color: goldYellow),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isBusy ? null : submit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: goldYellow,
+                    foregroundColor: Colors.black,
+                  ),
+                  child: isBusy
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(isSignup ? 'Sign up' : 'Login'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showUserInfoDialog({required String title, required String message}) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1F1F1F),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(
+              color: goldYellow,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: Text(
+            message,
+            style: TextStyle(color: Colors.grey[200], height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Close', style: TextStyle(color: goldYellow)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildUserProfileMenu() {
+    return Consumer<AuthService>(
+      builder: (context, auth, _) {
+        final userName = auth.user?.name.trim().isNotEmpty == true
+            ? auth.user!.name
+            : _guestDisplayName;
+        return PopupMenuButton<_ProfileMenuAction>(
+          tooltip: 'User profile',
+          onSelected: _handleProfileMenuSelection,
+          offset: const Offset(0, 48),
+          elevation: 16,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          itemBuilder: (context) {
+            if (!auth.isAuthenticated) {
+              return const [
+                PopupMenuItem(
+                  value: _ProfileMenuAction.login,
+                  child: _ProfileMenuEntry(label: 'Login'),
+                ),
+                PopupMenuItem(
+                  value: _ProfileMenuAction.signup,
+                  child: _ProfileMenuEntry(label: 'Create Account'),
+                ),
+              ];
+            }
+            return const [
+              PopupMenuItem(
+                value: _ProfileMenuAction.profile,
+                child: _ProfileMenuEntry(label: 'Profile'),
+              ),
+              PopupMenuItem(
+                value: _ProfileMenuAction.orders,
+                child: _ProfileMenuEntry(label: 'Orders'),
+              ),
+              PopupMenuItem(
+                value: _ProfileMenuAction.membership,
+                child: _ProfileMenuEntry(label: 'Papichulo One'),
+              ),
+              PopupMenuItem(
+                value: _ProfileMenuAction.favourites,
+                child: _ProfileMenuEntry(label: 'Favourites'),
+              ),
+              PopupMenuItem(
+                value: _ProfileMenuAction.logout,
+                child: _ProfileMenuEntry(label: 'Logout'),
+              ),
+            ];
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: goldYellow.withOpacity(0.35)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.person_outline,
+                  color: Color(0xFFFF7A00),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$userName ...',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFFF7A00),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(Icons.keyboard_arrow_down, color: Color(0xFFFF7A00)),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -713,9 +1187,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 class _NavItemWidget extends StatelessWidget {
   final String text;
   final VoidCallback onTap;
+  final int badgeCount;
   static const Color goldYellow = Color(0xFFFFD700);
 
-  const _NavItemWidget({required this.text, required this.onTap});
+  const _NavItemWidget({
+    required this.text,
+    required this.onTap,
+    this.badgeCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -723,25 +1202,59 @@ class _NavItemWidget extends StatelessWidget {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white.withOpacity(0.03),
-                Colors.white.withOpacity(0.01),
-              ],
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.03),
+                    Colors.white.withOpacity(0.01),
+                  ],
+                ),
+                border: Border.all(color: goldYellow.withOpacity(0.5)),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                text,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: goldYellow,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-            border: Border.all(color: goldYellow.withOpacity(0.5)),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: goldYellow,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+            if (badgeCount > 0)
+              Positioned(
+                top: -7,
+                right: -7,
+                child: Container(
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: Colors.black87),
+                  ),
+                  child: Text(
+                    badgeCount > 99 ? '99+' : '$badgeCount',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -866,6 +1379,105 @@ class _PrimaryCTAWidgetState extends State<_PrimaryCTAWidget> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HeaderLocationChip extends StatelessWidget {
+  final Object? label;
+  final bool isLoading;
+  final VoidCallback onTap;
+  static const Color goldYellow = Color(0xFFFFD700);
+
+  const _HeaderLocationChip({
+    required this.label,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedLabel = (label?.toString() ?? '').trim();
+    final displayLabel = resolvedLabel.isEmpty || resolvedLabel == 'null'
+        ? 'Set location'
+        : resolvedLabel;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 320),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: goldYellow.withOpacity(0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.location_on_outlined, size: 18, color: goldYellow),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  displayLabel,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (isLoading)
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: goldYellow.withOpacity(0.9),
+                  ),
+                )
+              else
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: goldYellow,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _ProfileMenuAction {
+  login,
+  signup,
+  profile,
+  orders,
+  membership,
+  favourites,
+  logout,
+}
+
+class _ProfileMenuEntry extends StatelessWidget {
+  final String label;
+
+  const _ProfileMenuEntry({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xFF222222),
+        fontWeight: FontWeight.w700,
+        fontSize: 16,
       ),
     );
   }

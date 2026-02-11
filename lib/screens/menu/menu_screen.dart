@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../data/menu_data.dart';
+import '../../models/food_item.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/analytics_service.dart';
 import '../../widgets/fly_to_cart_button.dart';
@@ -23,6 +24,11 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
   late GlobalKey _cartIconKey;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  String _selectedCategory = 'All';
+  _FoodTypeFilter _selectedTypeFilter = _FoodTypeFilter.all;
+  _MenuSortOption _selectedSortOption = _MenuSortOption.popular;
 
   @override
   void initState() {
@@ -43,13 +49,61 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _slideController.dispose();
     super.dispose();
   }
 
+  List<String> get _categories {
+    final values = <String>{'All'};
+    for (final item in papichuloMenu) {
+      values.add(item.category);
+    }
+    return values.toList();
+  }
+
+  List<FoodItem> get _filteredItems {
+    Iterable<FoodItem> items = papichuloMenu;
+
+    if (_selectedCategory != 'All') {
+      items = items.where((item) => item.category == _selectedCategory);
+    }
+    if (_selectedTypeFilter == _FoodTypeFilter.veg) {
+      items = items.where((item) => item.type.toLowerCase() == 'veg');
+    } else if (_selectedTypeFilter == _FoodTypeFilter.nonVeg) {
+      items = items.where((item) => item.type.toLowerCase() == 'non-veg');
+    }
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      items = items.where((item) {
+        final ingredients = item.ingredients.join(' ').toLowerCase();
+        return item.name.toLowerCase().contains(q) ||
+            item.category.toLowerCase().contains(q) ||
+            ingredients.contains(q);
+      });
+    }
+
+    final list = items.toList();
+    switch (_selectedSortOption) {
+      case _MenuSortOption.popular:
+        list.sort((a, b) => b.rating.compareTo(a.rating));
+        break;
+      case _MenuSortOption.rating:
+        list.sort((a, b) => b.rating.compareTo(a.rating));
+        break;
+      case _MenuSortOption.priceLowToHigh:
+        list.sort((a, b) => a.price.compareTo(b.price));
+        break;
+      case _MenuSortOption.priceHighToLow:
+        list.sort((a, b) => b.price.compareTo(a.price));
+        break;
+    }
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
-    const categories = ['Pizza', 'Burgers', 'Sandwiches', 'Hot Dogs', 'Snacks'];
+    final filteredItems = _filteredItems;
 
     return Scaffold(
       appBar: AppBar(
@@ -106,89 +160,84 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: categories.map((category) {
-                      final items = papichuloMenu
-                          .where((item) => item.category == category)
-                          .toList();
-                      if (items.isEmpty) return const SizedBox.shrink();
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 32),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [goldYellow, darkGold],
-                                    ),
-                                    borderRadius: BorderRadius.circular(20),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: goldYellow.withOpacity(0.3),
-                                        blurRadius: 10,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    category.toUpperCase(),
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black,
-                                    ),
-                                  ),
-                                ),
-                                const Positioned(
-                                  right: -12,
-                                  top: -8,
-                                  child: _DecorCircle(
-                                    size: 14,
-                                    color: Color(0x33FFD700),
-                                  ),
-                                ),
-                                const Positioned(
-                                  right: -24,
-                                  bottom: -8,
-                                  child: _DecorCircle(
-                                    size: 9,
-                                    color: Color(0x338B5E00),
-                                  ),
+                    children: [
+                      _buildFilterPanel(),
+                      const SizedBox(height: 20),
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [goldYellow, darkGold],
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: goldYellow.withOpacity(0.3),
+                                  blurRadius: 10,
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            GridView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate:
-                                  const SliverGridDelegateWithMaxCrossAxisExtent(
-                                    maxCrossAxisExtent: 220,
-                                    mainAxisSpacing: 16,
-                                    crossAxisSpacing: 16,
-                                    childAspectRatio: 0.75,
-                                  ),
-                              itemCount: items.length,
-                              itemBuilder: (context, itemIndex) {
-                                final item = items[itemIndex];
-                                return _MenuItem(
-                                  item: item,
-                                  cartProvider: context.read<CartProvider>(),
-                                  cartIconKey: _cartIconKey,
-                                );
-                              },
+                            child: Text(
+                              '${_selectedCategory.toUpperCase()} MENU',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
                             ),
-                          ],
+                          ),
+                          const Positioned(
+                            right: -12,
+                            top: -8,
+                            child: _DecorCircle(
+                              size: 14,
+                              color: Color(0x33FFD700),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (filteredItems.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 48),
+                          alignment: Alignment.center,
+                          child: const Text(
+                            'No items match your filters',
+                            style: TextStyle(
+                              color: Colors.black54,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      else
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 220,
+                                mainAxisSpacing: 16,
+                                crossAxisSpacing: 16,
+                                childAspectRatio: 0.75,
+                              ),
+                          itemCount: filteredItems.length,
+                          itemBuilder: (context, itemIndex) {
+                            final item = filteredItems[itemIndex];
+                            return _MenuItem(
+                              item: item,
+                              cartProvider: context.read<CartProvider>(),
+                              cartIconKey: _cartIconKey,
+                            );
+                          },
                         ),
-                      );
-                    }).toList(),
+                    ],
                   ),
                 ),
               ),
@@ -197,6 +246,9 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
           Consumer<CartProvider>(
             builder: (context, cartProvider, _) {
               if (!cartProvider.isCartOpen) return const SizedBox();
+              final drawerWidth = MediaQuery.of(context).size.width >= 450
+                  ? 420.0
+                  : MediaQuery.of(context).size.width;
               return Positioned(
                 top: 0,
                 right: 0,
@@ -205,17 +257,24 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => cartProvider.closeCart(),
-                        child: Container(color: Colors.black54),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => cartProvider.closeCart(),
+                              child: Container(color: Colors.black54),
+                            ),
+                          ),
+                          SizedBox(width: drawerWidth),
+                        ],
                       ),
                     ),
                     Positioned(
                       top: 0,
                       right: 0,
                       bottom: 0,
-                      width: 420,
+                      width: drawerWidth,
                       child: Container(
                         decoration: const BoxDecoration(
                           color: Color(0xFF121212),
@@ -224,9 +283,13 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
                             bottomLeft: Radius.circular(16),
                           ),
                         ),
-                        child: CartDrawer(
-                          cartService: cartProvider.cartService,
-                          onClose: () => cartProvider.closeCart(),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {},
+                          child: CartDrawer(
+                            cartService: cartProvider.cartService,
+                            onClose: () => cartProvider.closeCart(),
+                          ),
                         ),
                       ),
                     ),
@@ -239,7 +302,139 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
       ),
     );
   }
+
+  Widget _buildFilterPanel() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _searchQuery = value),
+            decoration: InputDecoration(
+              hintText: 'Search menu...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                      icon: const Icon(Icons.clear),
+                    ),
+              filled: true,
+              fillColor: Colors.grey.shade100,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 10,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _categories.map((category) {
+                final isSelected = _selectedCategory == category;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(category),
+                    selected: isSelected,
+                    onSelected: (_) =>
+                        setState(() => _selectedCategory = category),
+                    selectedColor: goldYellow,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.black : Colors.black87,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    _buildTypeFilterChip('All', _FoodTypeFilter.all),
+                    _buildTypeFilterChip('Veg', _FoodTypeFilter.veg),
+                    _buildTypeFilterChip('Non-Veg', _FoodTypeFilter.nonVeg),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              DropdownButton<_MenuSortOption>(
+                value: _selectedSortOption,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _selectedSortOption = value);
+                },
+                items: const [
+                  DropdownMenuItem(
+                    value: _MenuSortOption.popular,
+                    child: Text('Sort: Popular'),
+                  ),
+                  DropdownMenuItem(
+                    value: _MenuSortOption.rating,
+                    child: Text('Sort: Rating'),
+                  ),
+                  DropdownMenuItem(
+                    value: _MenuSortOption.priceLowToHigh,
+                    child: Text('Sort: Price Low'),
+                  ),
+                  DropdownMenuItem(
+                    value: _MenuSortOption.priceHighToLow,
+                    child: Text('Sort: Price High'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeFilterChip(String label, _FoodTypeFilter type) {
+    final isSelected = _selectedTypeFilter == type;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => setState(() => _selectedTypeFilter = type),
+      selectedColor: goldYellow.withOpacity(0.22),
+      side: BorderSide(color: isSelected ? goldYellow : Colors.grey.shade300),
+      labelStyle: TextStyle(
+        color: Colors.black87,
+        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+      ),
+    );
+  }
 }
+
+enum _FoodTypeFilter { all, veg, nonVeg }
+
+enum _MenuSortOption { popular, rating, priceLowToHigh, priceHighToLow }
 
 class _MenuItem extends StatefulWidget {
   final dynamic item;

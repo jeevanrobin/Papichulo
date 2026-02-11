@@ -1,13 +1,16 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../data/menu_data.dart';
 import '../../models/cart_item.dart';
 import '../../models/delivery_config.dart';
 import '../../services/analytics_service.dart';
 import '../../services/cart_service.dart';
+import '../../services/order_alert_service.dart';
 import '../../services/order_api_service.dart';
 
 class CartDrawer extends StatefulWidget {
@@ -591,6 +594,25 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     double? deliveryDistanceKm;
     var withinDeliveryBoundary = false;
 
+    void applySelectedLocation(
+      _LocationResult result, {
+      required String successPrefix,
+    }) {
+      selectedLat = result.latitude;
+      selectedLng = result.longitude;
+      deliveryDistanceKm = _calculateDistanceKm(
+        storeLatitude: deliveryConfig.storeLatitude,
+        storeLongitude: deliveryConfig.storeLongitude,
+        latitude: result.latitude,
+        longitude: result.longitude,
+      );
+      withinDeliveryBoundary = deliveryDistanceKm! <= deliveryConfig.radiusKm;
+      addressController.text = result.label;
+      locationStatus = withinDeliveryBoundary
+          ? '$successPrefix Delivery available in your area.'
+          : '$successPrefix Selected location is outside delivery zone.';
+    }
+
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -643,6 +665,24 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         controller: addressController,
                         label: 'Address',
                         icon: Icons.location_on_outlined,
+                        readOnly: true,
+                        onTap: () async {
+                          if (isFetchingLocation) return;
+                          final picked = await _showMapAddressPicker(
+                            deliveryConfig: deliveryConfig,
+                            initialLatitude:
+                                selectedLat ?? deliveryConfig.storeLatitude,
+                            initialLongitude:
+                                selectedLng ?? deliveryConfig.storeLongitude,
+                          );
+                          if (!context.mounted || picked == null) return;
+                          setDialogState(() {
+                            applySelectedLocation(
+                              picked,
+                              successPrefix: 'Location pinned on map.',
+                            );
+                          });
+                        },
                         maxLines: 2,
                         validator: (v) => (v == null || v.trim().length < 8)
                             ? 'Enter full delivery address'
@@ -679,25 +719,12 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                                     try {
                                       final result =
                                           await _resolveCurrentLocationLabel();
-                                      selectedLat = result.latitude;
-                                      selectedLng = result.longitude;
-                                      deliveryDistanceKm = _calculateDistanceKm(
-                                        storeLatitude:
-                                            deliveryConfig.storeLatitude,
-                                        storeLongitude:
-                                            deliveryConfig.storeLongitude,
-                                        latitude: result.latitude,
-                                        longitude: result.longitude,
-                                      );
-                                      withinDeliveryBoundary =
-                                          deliveryDistanceKm! <=
-                                          deliveryConfig.radiusKm;
-                                      addressController.text = result.label;
                                       setDialogState(() {
                                         isFetchingLocation = false;
-                                        locationStatus = withinDeliveryBoundary
-                                            ? 'Location detected. Delivery available in your area.'
-                                            : 'Location detected, but this address is outside delivery zone.';
+                                        applySelectedLocation(
+                                          result,
+                                          successPrefix: 'Location detected.',
+                                        );
                                       });
                                     } catch (error) {
                                       setDialogState(() {
@@ -750,24 +777,17 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                                     try {
                                       final geocoded = await _orderApi
                                           .geocodeAddress(typedAddress);
-                                      selectedLat = geocoded.latitude;
-                                      selectedLng = geocoded.longitude;
-                                      deliveryDistanceKm = _calculateDistanceKm(
-                                        storeLatitude:
-                                            deliveryConfig.storeLatitude,
-                                        storeLongitude:
-                                            deliveryConfig.storeLongitude,
+                                      final mapped = _LocationResult(
                                         latitude: geocoded.latitude,
                                         longitude: geocoded.longitude,
+                                        label: geocoded.label,
                                       );
-                                      withinDeliveryBoundary =
-                                          deliveryDistanceKm! <=
-                                          deliveryConfig.radiusKm;
                                       setDialogState(() {
                                         isFetchingLocation = false;
-                                        locationStatus = withinDeliveryBoundary
-                                            ? 'Address validated. Delivery available.'
-                                            : 'Address validated, but outside delivery zone.';
+                                        applySelectedLocation(
+                                          mapped,
+                                          successPrefix: 'Address validated.',
+                                        );
                                       });
                                     } catch (error) {
                                       setDialogState(() {
@@ -953,6 +973,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         items: widget.cartService.items,
                         totalAmount: widget.cartService.totalAmount,
                       );
+                      OrderAlertService.instance.registerPlacedOrder(order);
 
                       if (!context.mounted) return;
                       AnalyticsService().track(
@@ -1038,6 +1059,182 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     );
   }
 
+  Future<_LocationResult?> _showMapAddressPicker({
+    required DeliveryConfig deliveryConfig,
+    required double initialLatitude,
+    required double initialLongitude,
+  }) async {
+    LatLng selectedPoint = LatLng(initialLatitude, initialLongitude);
+    String selectedLabel = '';
+    bool isResolving = true;
+    bool didInit = false;
+
+    return showDialog<_LocationResult>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> resolvePointLabel(LatLng point) async {
+              setDialogState(() => isResolving = true);
+              try {
+                final label = await _orderApi.reverseGeocode(
+                  latitude: point.latitude,
+                  longitude: point.longitude,
+                );
+                final navigator = Navigator.of(dialogContext);
+                if (!navigator.mounted) return;
+                setDialogState(() {
+                  selectedLabel = label.trim().isEmpty
+                      ? 'Selected map location'
+                      : label;
+                  isResolving = false;
+                });
+              } catch (_) {
+                final navigator = Navigator.of(dialogContext);
+                if (!navigator.mounted) return;
+                setDialogState(() {
+                  selectedLabel = 'Selected map location';
+                  isResolving = false;
+                });
+              }
+            }
+
+            if (!didInit) {
+              didInit = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                resolvePointLabel(selectedPoint);
+              });
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              backgroundColor: darkGrey,
+              title: Text(
+                'Pick Delivery Location',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: goldYellow,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: SizedBox(
+                width: 620,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: 320,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: FlutterMap(
+                          options: MapOptions(
+                            initialCenter: LatLng(
+                              deliveryConfig.storeLatitude,
+                              deliveryConfig.storeLongitude,
+                            ),
+                            initialZoom: 13,
+                            onTap: (_, point) {
+                              selectedPoint = point;
+                              resolvePointLabel(point);
+                            },
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'papichulo',
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: LatLng(
+                                    deliveryConfig.storeLatitude,
+                                    deliveryConfig.storeLongitude,
+                                  ),
+                                  width: 32,
+                                  height: 32,
+                                  child: const Icon(
+                                    Icons.storefront,
+                                    color: Colors.redAccent,
+                                    size: 24,
+                                  ),
+                                ),
+                                Marker(
+                                  point: selectedPoint,
+                                  width: 36,
+                                  height: 36,
+                                  child: const Icon(
+                                    Icons.location_on,
+                                    color: goldYellow,
+                                    size: 30,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      isResolving
+                          ? 'Resolving selected location...'
+                          : selectedLabel,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: isResolving ? Colors.grey[400] : Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tip: Tap anywhere on map to place delivery pin.',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.grey[400]),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: isResolving
+                      ? null
+                      : () {
+                          Navigator.pop(
+                            dialogContext,
+                            _LocationResult(
+                              latitude: selectedPoint.latitude,
+                              longitude: selectedPoint.longitude,
+                              label: selectedLabel,
+                            ),
+                          );
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: goldYellow,
+                    foregroundColor: Colors.black,
+                  ),
+                  child: const Text(
+                    'Use this location',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<_LocationResult> _resolveCurrentLocationLabel() async {
     final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!isServiceEnabled) {
@@ -1072,8 +1269,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
         longitude: position.longitude,
       );
     } catch (_) {
-      label =
-          'Lat ${position.latitude.toStringAsFixed(5)}, Lng ${position.longitude.toStringAsFixed(5)}';
+      label = 'Current location';
     }
 
     return _LocationResult(
@@ -1116,11 +1312,15 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     required String? Function(String?) validator,
     TextInputType? keyboardType,
     int maxLines = 1,
+    bool readOnly = false,
+    VoidCallback? onTap,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
+      readOnly: readOnly,
+      onTap: onTap,
       validator: validator,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(

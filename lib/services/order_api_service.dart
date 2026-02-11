@@ -6,6 +6,7 @@ import '../models/cart_item.dart';
 import '../models/delivery_config.dart';
 import '../models/order_record.dart';
 import 'api_config.dart';
+import 'auth_service.dart';
 
 class OrderApiService {
   final http.Client _client;
@@ -14,11 +15,35 @@ class OrderApiService {
 
   List<String> get _baseUrls {
     final primary = ApiConfig.baseUrl;
-    final urls = <String>[primary];
-    if (primary.contains('localhost:3001')) {
-      urls.add(primary.replaceFirst('localhost:3001', 'localhost:3011'));
+    final candidates = <String>[primary];
+
+    void addIfMissing(String value) {
+      if (!candidates.contains(value)) {
+        candidates.add(value);
+      }
     }
-    return urls;
+
+    if (primary.contains('localhost:3001')) {
+      addIfMissing(primary.replaceFirst('localhost:3001', 'localhost:3011'));
+    } else if (primary.contains('localhost:3011')) {
+      addIfMissing(primary.replaceFirst('localhost:3011', 'localhost:3001'));
+    }
+
+    if (primary.contains('127.0.0.1:3001')) {
+      addIfMissing(primary.replaceFirst('127.0.0.1:3001', '127.0.0.1:3011'));
+    } else if (primary.contains('127.0.0.1:3011')) {
+      addIfMissing(primary.replaceFirst('127.0.0.1:3011', '127.0.0.1:3001'));
+    }
+
+    for (final url in List<String>.from(candidates)) {
+      if (url.contains('localhost')) {
+        addIfMissing(url.replaceFirst('localhost', '127.0.0.1'));
+      } else if (url.contains('127.0.0.1')) {
+        addIfMissing(url.replaceFirst('127.0.0.1', 'localhost'));
+      }
+    }
+
+    return candidates;
   }
 
   Future<http.Response> _getWithFallback(String path) async {
@@ -27,7 +52,7 @@ class OrderApiService {
       try {
         final response = await _client.get(
           Uri.parse('$baseUrl$path'),
-          headers: _adminHeaders(),
+          headers: {..._authHeaders(), ..._adminHeaders()},
         );
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response;
@@ -46,7 +71,11 @@ class OrderApiService {
       try {
         final response = await _client.post(
           Uri.parse('$baseUrl$path'),
-          headers: {'Content-Type': 'application/json', ..._adminHeaders()},
+          headers: {
+            'Content-Type': 'application/json',
+            ..._authHeaders(),
+            ..._adminHeaders(),
+          },
           body: jsonEncode(payload),
         );
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -66,7 +95,11 @@ class OrderApiService {
       try {
         final response = await _client.put(
           Uri.parse('$baseUrl$path'),
-          headers: {'Content-Type': 'application/json', ..._adminHeaders()},
+          headers: {
+            'Content-Type': 'application/json',
+            ..._authHeaders(),
+            ..._adminHeaders(),
+          },
           body: jsonEncode(payload),
         );
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -86,7 +119,11 @@ class OrderApiService {
       try {
         final response = await _client.patch(
           Uri.parse('$baseUrl$path'),
-          headers: {'Content-Type': 'application/json', ..._adminHeaders()},
+          headers: {
+            'Content-Type': 'application/json',
+            ..._authHeaders(),
+            ..._adminHeaders(),
+          },
           body: jsonEncode(payload),
         );
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -98,6 +135,12 @@ class OrderApiService {
       }
     }
     throw lastError ?? Exception('Request failed ($path)');
+  }
+
+  Map<String, String> _authHeaders() {
+    final token = AuthService.instance.authToken;
+    if (token == null || token.isEmpty) return const {};
+    return {'Authorization': 'Bearer $token'};
   }
 
   Map<String, String> _adminHeaders() {
@@ -173,6 +216,17 @@ class OrderApiService {
           .toList();
     }
     throw Exception('Invalid orders response format');
+  }
+
+  Future<List<OrderRecord>> fetchMyOrders() async {
+    final response = await _getWithFallback('/my/orders');
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return decoded
+          .map((e) => OrderRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+    throw Exception('Invalid my orders response format');
   }
 
   Future<DeliveryConfig> fetchDeliveryConfig() async {

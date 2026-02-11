@@ -3,6 +3,8 @@ const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -15,6 +17,8 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://jeevanrobin.gith
 const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
 const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 120);
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
+const jwtSecret = process.env.JWT_SECRET || 'papichulo-dev-secret-change-this';
+const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
 
 class ApiError extends Error {
   constructor(status, code, message, details = null) {
@@ -46,11 +50,110 @@ const orderStatusSchema = z.object({
   status: z.enum(['new', 'accepted', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']),
 }).strict();
 
+const adminOrderStatusSchema = z.object({
+  orderId: z.string().trim().min(3),
+  status: z.enum(['new', 'accepted', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']),
+}).strict();
+
 const deliveryConfigSchema = z.object({
   storeLatitude: z.number().gte(-90).lte(90),
   storeLongitude: z.number().gte(-180).lte(180),
   radiusKm: z.number().gt(0).lte(50),
 }).strict();
+
+const signupSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  email: z.string().trim().email().max(120),
+  phone: z.string().trim().regex(/^[0-9+\-\s]{7,15}$/).optional(),
+  password: z.string().min(6).max(100),
+}).strict();
+
+const loginSchema = z.object({
+  email: z.string().trim().email().max(120),
+  password: z.string().min(6).max(100),
+}).strict();
+
+const cartSchema = z.object({
+  items: z.array(
+    z.object({
+      name: z.string().trim().min(1).max(120),
+      price: z.number().nonnegative(),
+      quantity: z.number().int().positive().max(50),
+    }),
+  ).min(1).max(50),
+}).strict();
+
+const paymentSchema = z.object({
+  orderId: z.string().trim().min(3),
+  amount: z.number().positive(),
+  method: z.enum(['UPI', 'CARD', 'WALLET', 'COD', 'MOCK_ONLINE']),
+}).strict();
+
+const menuItemCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  category: z.string().trim().min(2).max(80),
+  type: z.enum(['Veg', 'Non-Veg']),
+  ingredients: z.array(z.string().trim().min(1).max(80)).min(1).max(30),
+  imageUrl: z.string().trim().url().optional().or(z.literal('')),
+  price: z.number().positive().max(100000),
+  rating: z.number().gte(0).lte(5).default(4.5),
+}).strict();
+
+const menuItemUpdateSchema = menuItemCreateSchema.partial().strict();
+
+function toUserResponse(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    createdAt: user.createdAt,
+  };
+}
+
+function signUserToken(user) {
+  return jwt.sign(
+    {
+      sub: String(user.id),
+      role: user.role,
+      email: user.email,
+      name: user.name,
+    },
+    jwtSecret,
+    { expiresIn: jwtExpiresIn },
+  );
+}
+
+function parseBearerToken(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || typeof authHeader !== 'string') return null;
+  if (!authHeader.startsWith('Bearer ')) return null;
+  return authHeader.slice(7).trim();
+}
+
+function getOptionalUserIdFromRequest(req) {
+  const token = parseBearerToken(req);
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    const userId = Number(payload.sub);
+    if (!Number.isInteger(userId) || userId <= 0) return null;
+    return userId;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getOptionalAuthPayload(req) {
+  const token = parseBearerToken(req);
+  if (!token) return null;
+  try {
+    return jwt.verify(token, jwtSecret);
+  } catch (_) {
+    return null;
+  }
+}
 
 function makeOrderId() {
   const ts = Date.now().toString().slice(-8);
@@ -197,14 +300,43 @@ function validateBody(schema) {
 
 function requireAdmin(req, _, next) {
   const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey) {
+  const providedKey = req.headers['x-admin-key'];
+  if (adminKey && providedKey === adminKey) {
+    req.user = { role: 'admin', authType: 'admin_key' };
     return next();
   }
-  const provided = req.headers['x-admin-key'];
-  if (provided !== adminKey) {
-    throw new ApiError(401, 'UNAUTHORIZED', 'Missing or invalid admin key');
+
+  const token = parseBearerToken(req);
+  if (!token) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Missing admin key or auth token');
   }
-  next();
+
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    const role = String(payload.role || '').toLowerCase();
+    if (role !== 'admin') {
+      throw new ApiError(403, 'FORBIDDEN', 'Admin role required');
+    }
+    req.user = payload;
+    return next();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired auth token');
+  }
+}
+
+function requireAuth(req, _, next) {
+  const token = parseBearerToken(req);
+  if (!token) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Missing auth token');
+  }
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    req.user = payload;
+    next();
+  } catch (_) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired auth token');
+  }
 }
 
 app.use(cors({
@@ -253,6 +385,140 @@ app.get('/api/menu', asyncHandler(async (_, res) => {
       rating: item.rating,
     })),
   );
+}));
+
+app.post('/api/signup', validateBody(signupSchema), asyncHandler(async (req, res) => {
+  const { name, email, phone, password } = req.body;
+  const normalizedEmail = email.toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  if (existing) {
+    throw new ApiError(409, 'EMAIL_EXISTS', 'An account with this email already exists.');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email: normalizedEmail,
+      phone: phone || null,
+      passwordHash,
+      role: 'customer',
+    },
+  });
+  const token = signUserToken(user);
+  res.status(201).json({
+    token,
+    user: toUserResponse(user),
+  });
+}));
+
+app.post('/api/login', validateBody(loginSchema), asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+  const normalizedEmail = email.toLowerCase();
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  if (!user) {
+    throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
+  }
+
+  const isValid = await bcrypt.compare(password, user.passwordHash);
+  if (!isValid) {
+    throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
+  }
+
+  const token = signUserToken(user);
+  res.json({
+    token,
+    user: toUserResponse(user),
+  });
+}));
+
+app.get('/api/me', requireAuth, asyncHandler(async (req, res) => {
+  const userId = Number(req.user.sub);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid user token.');
+  }
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new ApiError(404, 'NOT_FOUND', 'User not found.');
+  }
+  res.json(toUserResponse(user));
+}));
+
+app.post('/api/cart', validateBody(cartSchema), asyncHandler(async (req, res) => {
+  const subtotal = req.body.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const tax = Number((subtotal * 0.05).toFixed(2));
+  const deliveryFee = subtotal >= 500 ? 0 : 30;
+  const discount = 0;
+  const total = Number((subtotal + tax + deliveryFee - discount).toFixed(2));
+  res.json({
+    items: req.body.items,
+    pricing: { subtotal, tax, deliveryFee, discount, total },
+  });
+}));
+
+app.post('/api/payment', validateBody(paymentSchema), asyncHandler(async (req, res) => {
+  // Current phase uses mock payment response; real gateway integration is next.
+  res.json({
+    orderId: req.body.orderId,
+    method: req.body.method,
+    amount: req.body.amount,
+    status: req.body.method === 'COD' ? 'pending_cod' : 'mock_success',
+    transactionId: `TXN${Date.now()}`,
+  });
+}));
+
+app.get('/api/menu/:id', asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Menu id must be a positive integer.');
+  }
+  const item = await prisma.menuItem.findUnique({ where: { id } });
+  if (!item) {
+    throw new ApiError(404, 'NOT_FOUND', 'Menu item not found.');
+  }
+  res.json({
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    type: item.type,
+    ingredients: item.ingredients,
+    imageUrl: item.imageUrl,
+    price: item.price,
+    rating: item.rating,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  });
+}));
+
+app.post('/api/admin/menu', requireAdmin, validateBody(menuItemCreateSchema), asyncHandler(async (req, res) => {
+  const created = await prisma.menuItem.create({
+    data: {
+      ...req.body,
+      imageUrl: req.body.imageUrl || '',
+    },
+  });
+  res.status(201).json(created);
+}));
+
+app.put('/api/admin/menu/:id', requireAdmin, validateBody(menuItemUpdateSchema), asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Menu id must be a positive integer.');
+  }
+  const updated = await prisma.menuItem.update({
+    where: { id },
+    data: req.body,
+  });
+  res.json(updated);
+}));
+
+app.delete('/api/admin/menu/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Menu id must be a positive integer.');
+  }
+  await prisma.menuItem.delete({ where: { id } });
+  res.status(204).send();
 }));
 
 app.get('/api/delivery-config', asyncHandler(async (_, res) => {
@@ -335,6 +601,85 @@ app.get('/api/orders', requireAdmin, asyncHandler(async (_, res) => {
   );
 }));
 
+app.get('/api/admin/orders', requireAdmin, asyncHandler(async (_, res) => {
+  const orders = await prisma.order.findMany({
+    include: { items: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(orders);
+}));
+
+app.get('/api/orders/:id', asyncHandler(async (req, res) => {
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: { items: true },
+  });
+  if (!order) {
+    throw new ApiError(404, 'NOT_FOUND', 'Order not found.');
+  }
+
+  const adminKey = process.env.ADMIN_API_KEY;
+  const providedKey = req.headers['x-admin-key'];
+  const authPayload = getOptionalAuthPayload(req);
+  const isAdmin = (adminKey && providedKey === adminKey)
+    || String(authPayload?.role || '').toLowerCase() === 'admin';
+
+  if (!isAdmin) {
+    if (!authPayload || !authPayload.sub) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'Missing auth token');
+    }
+    if (!order.userId || Number(authPayload.sub) !== order.userId) {
+      throw new ApiError(403, 'FORBIDDEN', 'Access denied for this order.');
+    }
+  }
+
+  res.json({
+    id: order.id,
+    customerName: order.customerName,
+    phone: order.phone,
+    address: order.address,
+    latitude: order.latitude,
+    longitude: order.longitude,
+    paymentMethod: order.paymentMethod,
+    items: order.items.map((item) => ({
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+    })),
+    totalAmount: order.totalAmount,
+    status: order.status,
+    createdAt: order.createdAt,
+  });
+}));
+
+app.get('/api/my/orders', requireAuth, asyncHandler(async (req, res) => {
+  const userId = Number(req.user.sub);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid user token.');
+  }
+  const orders = await prisma.order.findMany({
+    where: { userId },
+    include: { items: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(orders);
+}));
+
+app.get('/api/my/orders/:id', requireAuth, asyncHandler(async (req, res) => {
+  const userId = Number(req.user.sub);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid user token.');
+  }
+  const order = await prisma.order.findFirst({
+    where: { id: req.params.id, userId },
+    include: { items: true },
+  });
+  if (!order) {
+    throw new ApiError(404, 'NOT_FOUND', 'Order not found.');
+  }
+  res.json(order);
+}));
+
 app.post('/api/orders', validateBody(orderCreateSchema), asyncHandler(async (req, res) => {
   const {
     customerName,
@@ -373,10 +718,12 @@ app.post('/api/orders', validateBody(orderCreateSchema), asyncHandler(async (req
     totalAmount,
     status: 'new',
   };
+  const userId = getOptionalUserIdFromRequest(req);
 
   const created = await prisma.order.create({
     data: {
       ...orderPayload,
+      userId,
       items: {
         create: items.map((item) => ({
           name: item.name,
@@ -420,6 +767,15 @@ app.patch('/api/orders/:id/status', requireAdmin, validateBody(orderStatusSchema
     status: updated.status,
     createdAt: updated.createdAt,
   });
+}));
+
+app.patch('/api/admin/order-status', requireAdmin, validateBody(adminOrderStatusSchema), asyncHandler(async (req, res) => {
+  const updated = await prisma.order.update({
+    where: { id: req.body.orderId },
+    data: { status: req.body.status },
+    include: { items: true },
+  });
+  res.json(updated);
 }));
 
 app.use((_, res) => {

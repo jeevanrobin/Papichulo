@@ -24,12 +24,10 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
   late Future<List<OrderRecord>> _ordersFuture;
   late Future<DeliveryConfig> _configFuture;
   final TextEditingController _radiusController = TextEditingController();
-  final TextEditingController _storeLatController = TextEditingController();
-  final TextEditingController _storeLngController = TextEditingController();
+  double? _storeLatitude;
+  double? _storeLongitude;
   bool _savingConfig = false;
   bool _detectingStoreLocation = false;
-  final Set<String> _seenOrderIds = <String>{};
-  bool _showingOrderAlert = false;
   Timer? _pollTimer;
   _OrderListView _selectedView = _OrderListView.incoming;
   String _storeAreaLabel = '';
@@ -61,129 +59,17 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _radiusController.dispose();
-    _storeLatController.dispose();
-    _storeLngController.dispose();
     super.dispose();
   }
 
   Future<List<OrderRecord>> _fetchOrdersWithAlerts() async {
-    final orders = await _api.fetchOrders();
-    final newOrders = orders.where((order) {
-      return order.status == 'new' && !_seenOrderIds.contains(order.id);
-    }).toList();
-
-    _seenOrderIds.addAll(orders.map((order) => order.id));
-
-    if (newOrders.isNotEmpty && mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _showingOrderAlert) return;
-        _showingOrderAlert = true;
-        _showNewOrderAlert(
-          newOrders.first,
-          newOrderCount: newOrders.length,
-        ).whenComplete(() {
-          if (mounted) {
-            _showingOrderAlert = false;
-          }
-        });
-      });
-    }
-    return orders;
-  }
-
-  Future<void> _showNewOrderAlert(
-    OrderRecord order, {
-    int newOrderCount = 1,
-  }) async {
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF222222),
-        title: Row(
-          children: [
-            const Icon(Icons.notifications_active, color: goldYellow),
-            const SizedBox(width: 8),
-            Text(
-              newOrderCount > 1
-                  ? '$newOrderCount New Orders Received'
-                  : 'New Order Received',
-              style: const TextStyle(
-                color: goldYellow,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Order ${order.id}\nCustomer: ${order.customerName}\nTotal: Rs ${order.totalAmount.toStringAsFixed(2)}',
-          style: const TextStyle(color: Colors.white),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _api.updateOrderStatus(
-                orderId: order.id,
-                status: 'cancelled',
-              );
-              if (!mounted) return;
-              await _refresh();
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Order ${order.id} declined.'),
-                  backgroundColor: Colors.redAccent,
-                ),
-              );
-            },
-            child: const Text(
-              'Decline',
-              style: TextStyle(
-                color: Colors.redAccent,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _api.updateOrderStatus(
-                orderId: order.id,
-                status: 'accepted',
-              );
-              if (!mounted) return;
-              await _refresh();
-              if (!mounted) return;
-              setState(() => _selectedView = _OrderListView.incoming);
-            },
-            child: const Text(
-              'Accept',
-              style: TextStyle(
-                color: Colors.greenAccent,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              if (!mounted) return;
-              setState(() => _selectedView = _OrderListView.incoming);
-            },
-            child: const Text(
-              'Open Orders',
-              style: TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
+    return _api.fetchOrders();
   }
 
   Future<void> _saveDeliveryConfig() async {
     final radius = double.tryParse(_radiusController.text.trim());
-    final storeLat = double.tryParse(_storeLatController.text.trim());
-    final storeLng = double.tryParse(_storeLngController.text.trim());
+    final storeLat = _storeLatitude;
+    final storeLng = _storeLongitude;
 
     if (radius == null ||
         radius <= 0 ||
@@ -192,9 +78,7 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
         storeLng == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Enter valid store coordinates and delivery radius (1-50 km).',
-          ),
+          content: Text('Detect store location and set radius (1-50 km).'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -336,8 +220,8 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _storeLatController.text = position.latitude.toStringAsFixed(6);
-        _storeLngController.text = position.longitude.toStringAsFixed(6);
+        _storeLatitude = position.latitude;
+        _storeLongitude = position.longitude;
         _storeAreaLabel = areaName;
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -408,13 +292,9 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                 if (_radiusController.text.isEmpty) {
                   _radiusController.text = config.radiusKm.toStringAsFixed(1);
                 }
-                if (_storeLatController.text.isEmpty) {
-                  _storeLatController.text = config.storeLatitude
-                      .toStringAsFixed(6);
-                }
-                if (_storeLngController.text.isEmpty) {
-                  _storeLngController.text = config.storeLongitude
-                      .toStringAsFixed(6);
+                if (_storeLatitude == null || _storeLongitude == null) {
+                  _storeLatitude = config.storeLatitude;
+                  _storeLongitude = config.storeLongitude;
                 }
                 if (_storeAreaLabel.isEmpty) {
                   WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -460,28 +340,6 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          Expanded(
-                            child: _field(
-                              _storeLatController,
-                              'Store Lat',
-                              const TextInputType.numberWithOptions(
-                                decimal: true,
-                                signed: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _field(
-                              _storeLngController,
-                              'Store Lng',
-                              const TextInputType.numberWithOptions(
-                                decimal: true,
-                                signed: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
                           SizedBox(
                             height: 44,
                             child: ElevatedButton(
@@ -511,6 +369,15 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                           'Store area: $_storeAreaLabel',
                           style: TextStyle(
                             color: Colors.grey[300],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Store area not detected yet. Use current location below.',
+                          style: TextStyle(
+                            color: Colors.grey[400],
                             fontSize: 12,
                           ),
                         ),
