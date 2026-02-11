@@ -215,6 +215,20 @@ class OrderApiService {
     throw Exception('Invalid geocode response format');
   }
 
+  Future<String> reverseGeocode({
+    required double latitude,
+    required double longitude,
+  }) async {
+    final response = await _getWithFallback(
+      '/reverse-geocode?lat=$latitude&lng=$longitude',
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map<String, dynamic>) {
+      return (decoded['label'] ?? '').toString();
+    }
+    throw Exception('Invalid reverse geocode response format');
+  }
+
   Future<void> updateOrderStatus({
     required String orderId,
     required String status,

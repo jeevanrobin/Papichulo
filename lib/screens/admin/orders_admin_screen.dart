@@ -29,8 +29,10 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
   bool _savingConfig = false;
   bool _detectingStoreLocation = false;
   final Set<String> _seenOrderIds = <String>{};
-  bool _seededExistingOrders = false;
+  bool _showingOrderAlert = false;
   Timer? _pollTimer;
+  _OrderListView _selectedView = _OrderListView.incoming;
+  String _storeAreaLabel = '';
 
   @override
   void initState() {
@@ -38,7 +40,7 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
     AnalyticsService().track('page_view', params: {'screen': 'admin_orders'});
     _ordersFuture = _fetchOrdersWithAlerts();
     _configFuture = _api.fetchDeliveryConfig();
-    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _refresh(silent: true);
     });
   }
@@ -66,12 +68,6 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
 
   Future<List<OrderRecord>> _fetchOrdersWithAlerts() async {
     final orders = await _api.fetchOrders();
-    if (!_seededExistingOrders) {
-      _seenOrderIds.addAll(orders.map((order) => order.id));
-      _seededExistingOrders = true;
-      return orders;
-    }
-
     final newOrders = orders.where((order) {
       return order.status == 'new' && !_seenOrderIds.contains(order.id);
     }).toList();
@@ -80,21 +76,43 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
 
     if (newOrders.isNotEmpty && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _showNewOrderAlert(newOrders.first);
+        if (!mounted || _showingOrderAlert) return;
+        _showingOrderAlert = true;
+        _showNewOrderAlert(
+          newOrders.first,
+          newOrderCount: newOrders.length,
+        ).whenComplete(() {
+          if (mounted) {
+            _showingOrderAlert = false;
+          }
+        });
       });
     }
     return orders;
   }
 
-  Future<void> _showNewOrderAlert(OrderRecord order) async {
+  Future<void> _showNewOrderAlert(
+    OrderRecord order, {
+    int newOrderCount = 1,
+  }) async {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF222222),
-        title: const Text(
-          'New Order Received',
-          style: TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
+        title: Row(
+          children: [
+            const Icon(Icons.notifications_active, color: goldYellow),
+            const SizedBox(width: 8),
+            Text(
+              newOrderCount > 1
+                  ? '$newOrderCount New Orders Received'
+                  : 'New Order Received',
+              style: const TextStyle(
+                color: goldYellow,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
         content: Text(
           'Order ${order.id}\nCustomer: ${order.customerName}\nTotal: Rs ${order.totalAmount.toStringAsFixed(2)}',
@@ -102,9 +120,58 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () async {
+              Navigator.pop(context);
+              await _api.updateOrderStatus(
+                orderId: order.id,
+                status: 'cancelled',
+              );
+              if (!mounted) return;
+              await _refresh();
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Order ${order.id} declined.'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+            },
             child: const Text(
-              'OK',
+              'Decline',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _api.updateOrderStatus(
+                orderId: order.id,
+                status: 'accepted',
+              );
+              if (!mounted) return;
+              await _refresh();
+              if (!mounted) return;
+              setState(() => _selectedView = _OrderListView.incoming);
+            },
+            child: const Text(
+              'Accept',
+              style: TextStyle(
+                color: Colors.greenAccent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              if (!mounted) return;
+              setState(() => _selectedView = _OrderListView.incoming);
+            },
+            child: const Text(
+              'Open Orders',
               style: TextStyle(color: goldYellow, fontWeight: FontWeight.w700),
             ),
           ),
@@ -263,14 +330,19 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
           accuracy: LocationAccuracy.high,
         ),
       );
+      final areaName = await _api.reverseGeocode(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
       if (!mounted) return;
       setState(() {
         _storeLatController.text = position.latitude.toStringAsFixed(6);
         _storeLngController.text = position.longitude.toStringAsFixed(6);
+        _storeAreaLabel = areaName;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Store location updated from current position.'),
+        SnackBar(
+          content: Text('Store location updated: $_storeAreaLabel'),
           backgroundColor: Colors.green,
         ),
       );
@@ -343,6 +415,18 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                 if (_storeLngController.text.isEmpty) {
                   _storeLngController.text = config.storeLongitude
                       .toStringAsFixed(6);
+                }
+                if (_storeAreaLabel.isEmpty) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) async {
+                    try {
+                      final label = await _api.reverseGeocode(
+                        latitude: config.storeLatitude,
+                        longitude: config.storeLongitude,
+                      );
+                      if (!mounted) return;
+                      setState(() => _storeAreaLabel = label);
+                    } catch (_) {}
+                  });
                 }
 
                 return Container(
@@ -421,6 +505,16 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                           ),
                         ],
                       ),
+                      if (_storeAreaLabel.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Store area: $_storeAreaLabel',
+                          style: TextStyle(
+                            color: Colors.grey[300],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       Row(
                         children: [
@@ -535,41 +629,67 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(16),
                     children: [
-                      Text(
-                        'Incoming Orders',
-                        style: TextStyle(
-                          color: Colors.grey[200],
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                        ),
+                      Row(
+                        children: [
+                          _buildViewButton(
+                            label: 'Incoming',
+                            active: _selectedView == _OrderListView.incoming,
+                            onTap: () {
+                              setState(
+                                () => _selectedView = _OrderListView.incoming,
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          _buildViewButton(
+                            label: 'History',
+                            active: _selectedView == _OrderListView.history,
+                            onTap: () {
+                              setState(
+                                () => _selectedView = _OrderListView.history,
+                              );
+                            },
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 10),
-                      if (incoming.isEmpty)
-                        _buildEmptySection('No active incoming orders.'),
-                      ...incoming.map(
-                        (order) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _buildOrderCard(order),
+                      if (_selectedView == _OrderListView.incoming) ...[
+                        Text(
+                          'Incoming Orders',
+                          style: TextStyle(
+                            color: Colors.grey[200],
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'History',
-                        style: TextStyle(
-                          color: Colors.grey[200],
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
+                        const SizedBox(height: 10),
+                        if (incoming.isEmpty)
+                          _buildEmptySection('No active incoming orders.'),
+                        ...incoming.map(
+                          (order) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildOrderCard(order),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (history.isEmpty)
-                        _buildEmptySection('No order history yet.'),
-                      ...history.map(
-                        (order) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _buildOrderCard(order),
+                      ] else ...[
+                        Text(
+                          'History',
+                          style: TextStyle(
+                            color: Colors.grey[200],
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                        if (history.isEmpty)
+                          _buildEmptySection('No order history yet.'),
+                        ...history.map(
+                          (order) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildOrderCard(order),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 );
@@ -716,4 +836,34 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
       ),
     );
   }
+
+  Widget _buildViewButton({
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: active ? goldYellow : const Color(0xFF222222),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: active ? Colors.black : Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
+
+enum _OrderListView { incoming, history }

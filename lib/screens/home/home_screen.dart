@@ -106,17 +106,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
             child: SafeArea(
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                child: Column(
-                  children: [
-                    _buildAnimatedHeader(),
-                    _buildAnimatedHeroSection(),
-                    _buildCategoryNav(),
-                    _buildAnimatedFeaturedItems(),
-                    const _FooterWidget(),
-                  ],
-                ),
+              child: Column(
+                children: [
+                  _buildAnimatedHeader(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics: const ClampingScrollPhysics(),
+                      child: Column(
+                        children: [
+                          _buildAnimatedHeroSection(),
+                          _buildCategoryNav(),
+                          _buildAnimatedFeaturedItems(),
+                          const _FooterWidget(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -128,37 +134,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 right: 0,
                 bottom: 0,
                 left: 0,
-                child: GestureDetector(
-                  onTap: () => cartProvider.closeCart(),
-                  child: Container(
-                    color: Colors.black54,
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          bottom: 0,
-                          width: 420,
-                          child: GestureDetector(
-                            onTap: () => FocusScope.of(context).unfocus(),
-                            child: Container(
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF121212),
-                                borderRadius: BorderRadius.only(
-                                  topLeft: Radius.circular(16),
-                                  bottomLeft: Radius.circular(16),
-                                ),
-                              ),
-                              child: CartDrawer(
-                                cartService: cartProvider.cartService,
-                                onClose: () => cartProvider.closeCart(),
-                              ),
-                            ),
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => cartProvider.closeCart(),
+                        child: Container(color: Colors.black54),
+                      ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      bottom: 0,
+                      width: 420,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF121212),
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            bottomLeft: Radius.circular(16),
                           ),
                         ),
-                      ],
+                        child: CartDrawer(
+                          cartService: cartProvider.cartService,
+                          onClose: () => cartProvider.closeCart(),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               );
             },

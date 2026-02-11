@@ -14,6 +14,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://jeevanrobin.gith
   .filter(Boolean);
 const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
 const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 120);
+const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
 
 class ApiError extends Error {
   constructor(status, code, message, details = null) {
@@ -89,6 +90,84 @@ async function getDeliveryConfig() {
       radiusKm: 10,
     },
   });
+}
+
+async function geocodeAddress(address) {
+  if (googleMapsApiKey) {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${googleMapsApiKey}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve address right now.');
+    }
+    const payload = await response.json();
+    if (!payload || payload.status !== 'OK' || !Array.isArray(payload.results) || payload.results.length === 0) {
+      throw new ApiError(404, 'ADDRESS_NOT_FOUND', 'Could not find this address on map.');
+    }
+    const first = payload.results[0];
+    return {
+      latitude: Number(first.geometry.location.lat),
+      longitude: Number(first.geometry.location.lng),
+      label: String(first.formatted_address || address),
+    };
+  }
+
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'papichulo-backend/1.0',
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve address right now.');
+  }
+
+  const payload = await response.json();
+  if (!Array.isArray(payload) || payload.length === 0) {
+    throw new ApiError(404, 'ADDRESS_NOT_FOUND', 'Could not find this address on map.');
+  }
+  const first = payload[0];
+  return {
+    latitude: Number(first.lat),
+    longitude: Number(first.lon),
+    label: String(first.display_name || address),
+  };
+}
+
+async function reverseGeocode(latitude, longitude) {
+  if (googleMapsApiKey) {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${latitude},${longitude}`)}&key=${googleMapsApiKey}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve location right now.');
+    }
+    const payload = await response.json();
+    if (!payload || payload.status !== 'OK' || !Array.isArray(payload.results) || payload.results.length === 0) {
+      throw new ApiError(404, 'LOCATION_NOT_FOUND', 'Could not resolve this location.');
+    }
+    const first = payload.results[0];
+    return {
+      label: String(first.formatted_address || `${latitude},${longitude}`),
+    };
+  }
+
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`;
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'papichulo-backend/1.0',
+      Accept: 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve location right now.');
+  }
+  const payload = await response.json();
+  const label = String(payload.display_name || '').trim();
+  if (!label) {
+    throw new ApiError(404, 'LOCATION_NOT_FOUND', 'Could not resolve this location.');
+  }
+  return { label };
 }
 
 function isAllowedOrigin(origin) {
@@ -210,28 +289,22 @@ app.get('/api/geocode', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Address must be at least 5 characters');
   }
 
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'papichulo-backend/1.0',
-      'Accept': 'application/json',
-    },
-  });
+  const first = await geocodeAddress(address);
+  res.json(first);
+}));
 
-  if (!response.ok) {
-    throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve address right now.');
+app.get('/api/reverse-geocode', asyncHandler(async (req, res) => {
+  const latitude = Number(req.query.lat);
+  const longitude = Number(req.query.lng);
+  if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'lat and lng are required numeric query params.');
   }
 
-  const payload = await response.json();
-  if (!Array.isArray(payload) || payload.length === 0) {
-    throw new ApiError(404, 'ADDRESS_NOT_FOUND', 'Could not find this address on map.');
-  }
-
-  const first = payload[0];
+  const resolved = await reverseGeocode(latitude, longitude);
   res.json({
-    latitude: Number(first.lat),
-    longitude: Number(first.lon),
-    label: String(first.display_name || address),
+    latitude,
+    longitude,
+    label: resolved.label,
   });
 }));
 

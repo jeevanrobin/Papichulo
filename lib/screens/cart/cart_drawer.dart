@@ -385,19 +385,27 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    GestureDetector(
-                      onTap: () => cartItem.quantity == 1
-                          ? widget.cartService.removeItem(cartItem.foodItem)
-                          : widget.cartService.updateQuantity(
-                              cartItem.foodItem,
-                              cartItem.quantity - 1,
-                            ),
-                      child: Icon(
-                        cartItem.quantity == 1
-                            ? Icons.delete_outline
-                            : Icons.remove,
-                        color: goldYellow,
-                        size: 18,
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => cartItem.quantity == 1
+                            ? widget.cartService.removeItem(cartItem.foodItem)
+                            : widget.cartService.updateQuantity(
+                                cartItem.foodItem,
+                                cartItem.quantity - 1,
+                              ),
+                        child: SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: Icon(
+                            cartItem.quantity == 1
+                                ? Icons.delete_outline
+                                : Icons.remove,
+                            color: goldYellow,
+                            size: 18,
+                          ),
+                        ),
                       ),
                     ),
                     Padding(
@@ -411,12 +419,20 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    GestureDetector(
-                      onTap: () => widget.cartService.updateQuantity(
-                        cartItem.foodItem,
-                        cartItem.quantity + 1,
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => widget.cartService.updateQuantity(
+                          cartItem.foodItem,
+                          cartItem.quantity + 1,
+                        ),
+                        child: const SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: Icon(Icons.add, color: goldYellow, size: 18),
+                        ),
                       ),
-                      child: const Icon(Icons.add, color: goldYellow, size: 18),
                     ),
                   ],
                 ),
@@ -474,44 +490,38 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     fontSize: 22,
                   ),
                 ),
-                GestureDetector(
-                  onTap: _showCheckoutDialog,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: goldYellow,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: goldYellow.withOpacity(0.35),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Checkout',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Colors.black,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.3,
-                                fontSize: 14,
-                              ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.arrow_forward,
-                          color: Colors.black,
-                          size: 18,
-                        ),
-                      ],
+                Material(
+                  color: goldYellow,
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: _showCheckoutDialog,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Checkout',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                  fontSize: 14,
+                                ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.arrow_forward,
+                            color: Colors.black,
+                            size: 18,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -903,8 +913,8 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                     style: TextStyle(color: Colors.grey[400]),
                   ),
                 ),
-                GestureDetector(
-                  onTap: () async {
+                ElevatedButton(
+                  onPressed: () async {
                     if (!formKey.currentState!.validate()) return;
                     if (selectedLat == null || selectedLng == null) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -1000,22 +1010,23 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       );
                     }
                   },
-                  child: Container(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: goldYellow,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 24,
                       vertical: 10,
                     ),
-                    decoration: BoxDecoration(
-                      color: goldYellow,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Place Order',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.3,
-                      ),
+                  ),
+                  child: Text(
+                    'Place Order',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ),
@@ -1054,11 +1065,21 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
 
+    String label;
+    try {
+      label = await _orderApi.reverseGeocode(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+    } catch (_) {
+      label =
+          'Lat ${position.latitude.toStringAsFixed(5)}, Lng ${position.longitude.toStringAsFixed(5)}';
+    }
+
     return _LocationResult(
       latitude: position.latitude,
       longitude: position.longitude,
-      label:
-          'Lat ${position.latitude.toStringAsFixed(5)}, Lng ${position.longitude.toStringAsFixed(5)}',
+      label: label,
     );
   }
 
