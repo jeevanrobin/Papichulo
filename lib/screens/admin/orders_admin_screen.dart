@@ -9,7 +9,11 @@ import '../../services/analytics_service.dart';
 import '../../services/order_api_service.dart';
 
 class OrdersAdminScreen extends StatefulWidget {
-  const OrdersAdminScreen({super.key});
+  final bool showScaffold;
+
+  const OrdersAdminScreen({super.key}) : showScaffold = true;
+
+  const OrdersAdminScreen.embedded({super.key}) : showScaffold = false;
 
   @override
   State<OrdersAdminScreen> createState() => _OrdersAdminScreenState();
@@ -247,6 +251,11 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final content = _buildBody();
+    if (!widget.showScaffold) {
+      return content;
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Incoming Orders'),
@@ -261,310 +270,308 @@ class _OrdersAdminScreenState extends State<OrdersAdminScreen> {
         ],
       ),
       backgroundColor: darkGrey,
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: FutureBuilder<DeliveryConfig>(
-              future: _configFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const LinearProgressIndicator();
-                }
-                if (snapshot.hasError || snapshot.data == null) {
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF222222),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.redAccent.withOpacity(0.35),
-                      ),
-                    ),
-                    child: Text(
-                      'Could not load delivery config: ${snapshot.error}',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  );
-                }
+      body: content,
+    );
+  }
 
-                final config = snapshot.data!;
-                if (_radiusController.text.isEmpty) {
-                  _radiusController.text = config.radiusKm.toStringAsFixed(1);
-                }
-                if (_storeLatitude == null || _storeLongitude == null) {
-                  _storeLatitude = config.storeLatitude;
-                  _storeLongitude = config.storeLongitude;
-                }
-                if (_storeAreaLabel.isEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) async {
-                    try {
-                      final label = await _api.reverseGeocode(
-                        latitude: config.storeLatitude,
-                        longitude: config.storeLongitude,
-                      );
-                      if (!mounted) return;
-                      setState(() => _storeAreaLabel = label);
-                    } catch (_) {}
-                  });
-                }
-
+  Widget _buildBody() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: FutureBuilder<DeliveryConfig>(
+            future: _configFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const LinearProgressIndicator();
+              }
+              if (snapshot.hasError || snapshot.data == null) {
                 return Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: const Color(0xFF222222),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: goldYellow.withOpacity(0.25)),
+                    border: Border.all(
+                      color: Colors.redAccent.withOpacity(0.35),
+                    ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Delivery Settings',
-                        style: TextStyle(
-                          color: goldYellow,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                        ),
+                  child: Text(
+                    'Could not load delivery config: ${snapshot.error}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                );
+              }
+
+              final config = snapshot.data!;
+              if (_radiusController.text.isEmpty) {
+                _radiusController.text = config.radiusKm.toStringAsFixed(1);
+              }
+              if (_storeLatitude == null || _storeLongitude == null) {
+                _storeLatitude = config.storeLatitude;
+                _storeLongitude = config.storeLongitude;
+              }
+              if (_storeAreaLabel.isEmpty) {
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  try {
+                    final label = await _api.reverseGeocode(
+                      latitude: config.storeLatitude,
+                      longitude: config.storeLongitude,
+                    );
+                    if (!mounted) return;
+                    setState(() => _storeAreaLabel = label);
+                  } catch (_) {}
+                });
+              }
+
+              return Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF222222),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: goldYellow.withOpacity(0.25)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Delivery Settings',
+                      style: TextStyle(
+                        color: goldYellow,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _field(
-                              _radiusController,
-                              'Radius (km)',
-                              const TextInputType.numberWithOptions(
-                                decimal: true,
-                              ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _field(
+                            _radiusController,
+                            'Radius (km)',
+                            const TextInputType.numberWithOptions(
+                              decimal: true,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            height: 44,
-                            child: ElevatedButton(
-                              onPressed: _savingConfig
-                                  ? null
-                                  : _saveDeliveryConfig,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: goldYellow,
-                                foregroundColor: Colors.black,
-                              ),
-                              child: _savingConfig
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('Save'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_storeAreaLabel.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Store area: $_storeAreaLabel',
-                          style: TextStyle(
-                            color: Colors.grey[300],
-                            fontSize: 12,
-                          ),
                         ),
-                      ] else ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          'Store area not detected yet. Use current location below.',
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: _detectingStoreLocation
+                        const SizedBox(width: 10),
+                        SizedBox(
+                          height: 44,
+                          child: ElevatedButton(
+                            onPressed: _savingConfig
                                 ? null
-                                : _useCurrentLocationForStore,
-                            icon: _detectingStoreLocation
+                                : _saveDeliveryConfig,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: goldYellow,
+                              foregroundColor: Colors.black,
+                            ),
+                            child: _savingConfig
                                 ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
+                                    width: 16,
+                                    height: 16,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Icon(Icons.my_location, size: 16),
-                            label: Text(
-                              _detectingStoreLocation
-                                  ? 'Detecting...'
-                                  : 'Use Current Location',
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: goldYellow,
-                              side: BorderSide(
-                                color: goldYellow.withOpacity(0.35),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Tip: Detect store location once, then set radius and Save.',
-                              style: TextStyle(
-                                color: Colors.grey[400],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<OrderRecord>>(
-              future: _ordersFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: Colors.redAccent,
-                            size: 34,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Failed to load orders',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(color: Colors.white),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${snapshot.error}',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey[400]),
-                          ),
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            onPressed: _refresh,
-                            child: const Text('Try again'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-
-                final orders = snapshot.data ?? const <OrderRecord>[];
-                final incoming = orders.where((order) {
-                  return order.status == 'new' ||
-                      order.status == 'accepted' ||
-                      order.status == 'preparing';
-                }).toList();
-                final history = orders.where((order) {
-                  return order.status == 'out_for_delivery' ||
-                      order.status == 'delivered' ||
-                      order.status == 'cancelled';
-                }).toList();
-
-                if (incoming.isEmpty && history.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No incoming orders yet.',
-                      style: TextStyle(color: Colors.grey[300], fontSize: 16),
-                    ),
-                  );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      Row(
-                        children: [
-                          _buildViewButton(
-                            label: 'Incoming',
-                            active: _selectedView == _OrderListView.incoming,
-                            onTap: () {
-                              setState(
-                                () => _selectedView = _OrderListView.incoming,
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          _buildViewButton(
-                            label: 'History',
-                            active: _selectedView == _OrderListView.history,
-                            onTap: () {
-                              setState(
-                                () => _selectedView = _OrderListView.history,
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      if (_selectedView == _OrderListView.incoming) ...[
-                        Text(
-                          'Incoming Orders',
-                          style: TextStyle(
-                            color: Colors.grey[200],
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (incoming.isEmpty)
-                          _buildEmptySection('No active incoming orders.'),
-                        ...incoming.map(
-                          (order) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildOrderCard(order),
-                          ),
-                        ),
-                      ] else ...[
-                        Text(
-                          'History',
-                          style: TextStyle(
-                            color: Colors.grey[200],
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (history.isEmpty)
-                          _buildEmptySection('No order history yet.'),
-                        ...history.map(
-                          (order) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildOrderCard(order),
+                                : const Text('Save'),
                           ),
                         ),
                       ],
+                    ),
+                    if (_storeAreaLabel.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Store area: $_storeAreaLabel',
+                        style: TextStyle(color: Colors.grey[300], fontSize: 12),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Store area not detected yet. Use current location below.',
+                        style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                      ),
                     ],
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _detectingStoreLocation
+                              ? null
+                              : _useCurrentLocationForStore,
+                          icon: _detectingStoreLocation
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.my_location, size: 16),
+                          label: Text(
+                            _detectingStoreLocation
+                                ? 'Detecting...'
+                                : 'Use Current Location',
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: goldYellow,
+                            side: BorderSide(
+                              color: goldYellow.withOpacity(0.35),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Tip: Detect store location once, then set radius and Save.',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        Expanded(
+          child: FutureBuilder<List<OrderRecord>>(
+            future: _ordersFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          color: Colors.redAccent,
+                          size: 34,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Failed to load orders',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: Colors.white),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey[400]),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: _refresh,
+                          child: const Text('Try again'),
+                        ),
+                      ],
+                    ),
                   ),
                 );
-              },
-            ),
+              }
+
+              final orders = snapshot.data ?? const <OrderRecord>[];
+              final incoming = orders.where((order) {
+                return order.status == 'new' ||
+                    order.status == 'accepted' ||
+                    order.status == 'preparing';
+              }).toList();
+              final history = orders.where((order) {
+                return order.status == 'out_for_delivery' ||
+                    order.status == 'delivered' ||
+                    order.status == 'cancelled';
+              }).toList();
+
+              if (incoming.isEmpty && history.isEmpty) {
+                return Center(
+                  child: Text(
+                    'No incoming orders yet.',
+                    style: TextStyle(color: Colors.grey[300], fontSize: 16),
+                  ),
+                );
+              }
+
+              return RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Row(
+                      children: [
+                        _buildViewButton(
+                          label: 'Incoming',
+                          active: _selectedView == _OrderListView.incoming,
+                          onTap: () {
+                            setState(
+                              () => _selectedView = _OrderListView.incoming,
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _buildViewButton(
+                          label: 'History',
+                          active: _selectedView == _OrderListView.history,
+                          onTap: () {
+                            setState(
+                              () => _selectedView = _OrderListView.history,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (_selectedView == _OrderListView.incoming) ...[
+                      Text(
+                        'Incoming Orders',
+                        style: TextStyle(
+                          color: Colors.grey[200],
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (incoming.isEmpty)
+                        _buildEmptySection('No active incoming orders.'),
+                      ...incoming.map(
+                        (order) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildOrderCard(order),
+                        ),
+                      ),
+                    ] else ...[
+                      Text(
+                        'History',
+                        style: TextStyle(
+                          color: Colors.grey[200],
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (history.isEmpty)
+                        _buildEmptySection('No order history yet.'),
+                      ...history.map(
+                        (order) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildOrderCard(order),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

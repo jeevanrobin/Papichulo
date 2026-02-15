@@ -16,6 +16,7 @@ model MenuItem {
   imageUrl    String
   price       Float
   rating      Float
+  available   Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -57,11 +58,23 @@ model DeliveryConfig {
 model User {
   id           Int      @id @default(autoincrement())
   name         String
-  email        String   @unique
-  phone        String?
-  passwordHash String
+  email        String?  @unique
+  phone        String?  @unique
+  passwordHash String?
   role         String   @default("customer")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   orders       Order[]
+}
+
+model OTP {
+  id          Int      @id @default(autoincrement())
+  phone       String
+  code        String
+  attempts    Int      @default(0)
+  resendCount Int      @default(1)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([phone, createdAt])
 }

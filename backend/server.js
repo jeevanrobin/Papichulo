@@ -5,6 +5,8 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { WebSocketServer } = require('ws');
+const { makeRbacMiddleware } = require('./middleware/rbac');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,6 +21,11 @@ const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 120);
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
 const jwtSecret = process.env.JWT_SECRET || 'papichulo-dev-secret-change-this';
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
+const wsAdminClients = new Set();
+const { requireAdmin, requireAuth } = makeRbacMiddleware({
+  jwtSecret,
+  allowAdminKey: true,
+});
 
 class ApiError extends Error {
   constructor(status, code, message, details = null) {
@@ -73,6 +80,15 @@ const loginSchema = z.object({
   password: z.string().min(6).max(100),
 }).strict();
 
+const otpSendSchema = z.object({
+  phone: z.string().trim().regex(/^[0-9]{10}$/),
+}).strict();
+
+const otpVerifySchema = z.object({
+  phone: z.string().trim().regex(/^[0-9]{10}$/),
+  otp: z.string().trim().regex(/^[0-9]{6}$/),
+}).strict();
+
 const cartSchema = z.object({
   items: z.array(
     z.object({
@@ -97,6 +113,7 @@ const menuItemCreateSchema = z.object({
   imageUrl: z.string().trim().url().optional().or(z.literal('')),
   price: z.number().positive().max(100000),
   rating: z.number().gte(0).lte(5).default(4.5),
+  available: z.boolean().default(true),
 }).strict();
 
 const menuItemUpdateSchema = menuItemCreateSchema.partial().strict();
@@ -110,6 +127,14 @@ function toUserResponse(user) {
     role: user.role,
     createdAt: user.createdAt,
   };
+}
+
+function normalizePhone(phone) {
+  return String(phone || '').replace(/[^0-9]/g, '').slice(-10);
+}
+
+function generateOtpCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 function signUserToken(user) {
@@ -130,6 +155,12 @@ function parseBearerToken(req) {
   if (!authHeader || typeof authHeader !== 'string') return null;
   if (!authHeader.startsWith('Bearer ')) return null;
   return authHeader.slice(7).trim();
+}
+
+function parseBearerTokenFromString(headerValue) {
+  if (!headerValue || typeof headerValue !== 'string') return null;
+  if (!headerValue.startsWith('Bearer ')) return null;
+  return headerValue.slice(7).trim();
 }
 
 function getOptionalUserIdFromRequest(req) {
@@ -298,44 +329,52 @@ function validateBody(schema) {
   };
 }
 
-function requireAdmin(req, _, next) {
-  const adminKey = process.env.ADMIN_API_KEY;
-  const providedKey = req.headers['x-admin-key'];
-  if (adminKey && providedKey === adminKey) {
-    req.user = { role: 'admin', authType: 'admin_key' };
-    return next();
-  }
+function toOrderResponse(order) {
+  return {
+    id: order.id,
+    customerName: order.customerName,
+    phone: order.phone,
+    address: order.address,
+    latitude: order.latitude,
+    longitude: order.longitude,
+    paymentMethod: order.paymentMethod,
+    items: order.items.map((item) => ({
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+    })),
+    totalAmount: order.totalAmount,
+    status: order.status,
+    createdAt: order.createdAt,
+  };
+}
 
-  const token = parseBearerToken(req);
-  if (!token) {
-    throw new ApiError(401, 'UNAUTHORIZED', 'Missing admin key or auth token');
-  }
-
-  try {
-    const payload = jwt.verify(token, jwtSecret);
-    const role = String(payload.role || '').toLowerCase();
-    if (role !== 'admin') {
-      throw new ApiError(403, 'FORBIDDEN', 'Admin role required');
+function broadcastOrderEvent(event) {
+  const payload = JSON.stringify(event);
+  for (const client of wsAdminClients) {
+    if (client.readyState === 1) {
+      client.send(payload);
     }
-    req.user = payload;
-    return next();
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired auth token');
   }
 }
 
-function requireAuth(req, _, next) {
-  const token = parseBearerToken(req);
-  if (!token) {
-    throw new ApiError(401, 'UNAUTHORIZED', 'Missing auth token');
+function isAdminWebSocketRequest(requestUrl) {
+  const parsed = new URL(requestUrl || '/ws/orders', 'http://localhost');
+  const adminKey = parsed.searchParams.get('adminKey') || '';
+  const token =
+    parsed.searchParams.get('token')
+    || parseBearerTokenFromString(parsed.searchParams.get('authorization'));
+
+  const expectedAdminKey = process.env.ADMIN_API_KEY || '';
+  if (expectedAdminKey && adminKey && adminKey === expectedAdminKey) {
+    return true;
   }
+  if (!token) return false;
   try {
     const payload = jwt.verify(token, jwtSecret);
-    req.user = payload;
-    next();
+    return String(payload.role || '').toLowerCase() === 'admin';
   } catch (_) {
-    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid or expired auth token');
+    return false;
   }
 }
 
@@ -372,10 +411,12 @@ app.get('/health', asyncHandler(async (_, res) => {
 
 app.get('/api/menu', asyncHandler(async (_, res) => {
   const menu = await prisma.menuItem.findMany({
+    where: { available: true },
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
   });
   res.json(
     menu.map((item) => ({
+      id: item.id,
       name: item.name,
       category: item.category,
       type: item.type,
@@ -383,8 +424,106 @@ app.get('/api/menu', asyncHandler(async (_, res) => {
       imageUrl: item.imageUrl,
       price: item.price,
       rating: item.rating,
+      available: item.available,
     })),
   );
+}));
+
+app.get('/api/admin/menu', requireAdmin, asyncHandler(async (_, res) => {
+  const menu = await prisma.menuItem.findMany({
+    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+  });
+  res.json(menu);
+}));
+
+app.post('/api/auth/send-otp', validateBody(otpSendSchema), asyncHandler(async (req, res) => {
+  const phone = normalizePhone(req.body.phone);
+  if (!/^[0-9]{10}$/.test(phone)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Phone must be 10 digits.');
+  }
+
+  const now = new Date();
+  const existing = await prisma.oTP.findFirst({
+    where: { phone },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (existing) {
+    const notExpired = existing.expiresAt > now;
+    if (notExpired && existing.resendCount >= 3) {
+      throw new ApiError(429, 'OTP_LIMIT_REACHED', 'Maximum OTP resend limit reached. Try again later.');
+    }
+  }
+
+  const otp = generateOtpCode();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  const resendCount = existing && existing.expiresAt > now ? existing.resendCount + 1 : 1;
+
+  await prisma.oTP.create({
+    data: {
+      phone,
+      code: otp,
+      expiresAt,
+      resendCount,
+      attempts: 0,
+    },
+  });
+
+  // TODO: Replace console logging with SMS provider integration (MSG91/Fast2SMS/Twilio).
+  console.log(`[OTP] ${phone}: ${otp}`);
+
+  res.json({
+    ok: true,
+    message: 'OTP sent successfully.',
+    expiresInSeconds: 300,
+    ...(process.env.NODE_ENV === 'production' ? {} : { debugOtp: otp }),
+  });
+}));
+
+app.post('/api/auth/verify-otp', validateBody(otpVerifySchema), asyncHandler(async (req, res) => {
+  const phone = normalizePhone(req.body.phone);
+  const otp = String(req.body.otp || '').trim();
+  const now = new Date();
+
+  const record = await prisma.oTP.findFirst({
+    where: { phone },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!record || record.expiresAt <= now) {
+    throw new ApiError(400, 'OTP_EXPIRED', 'OTP expired or not found. Please resend.');
+  }
+
+  if (record.attempts >= 5) {
+    throw new ApiError(429, 'OTP_ATTEMPTS_EXCEEDED', 'Too many invalid attempts. Please resend OTP.');
+  }
+
+  if (record.code !== otp) {
+    await prisma.oTP.update({
+      where: { id: record.id },
+      data: { attempts: { increment: 1 } },
+    });
+    throw new ApiError(400, 'INVALID_OTP', 'Invalid OTP.');
+  }
+
+  await prisma.oTP.deleteMany({ where: { phone } });
+
+  let user = await prisma.user.findFirst({ where: { phone } });
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        name: `User ${phone.slice(-4)}`,
+        phone,
+        role: 'customer',
+      },
+    });
+  }
+
+  const token = signUserToken(user);
+  res.json({
+    token,
+    user: toUserResponse(user),
+  });
 }));
 
 app.post('/api/signup', validateBody(signupSchema), asyncHandler(async (req, res) => {
@@ -418,6 +557,10 @@ app.post('/api/login', validateBody(loginSchema), asyncHandler(async (req, res) 
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) {
     throw new ApiError(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
+  }
+
+  if (!user.passwordHash) {
+    throw new ApiError(401, 'INVALID_CREDENTIALS', 'Use OTP login for this account.');
   }
 
   const isValid = await bcrypt.compare(password, user.passwordHash);
@@ -473,7 +616,14 @@ app.get('/api/menu/:id', asyncHandler(async (req, res) => {
     throw new ApiError(400, 'VALIDATION_ERROR', 'Menu id must be a positive integer.');
   }
   const item = await prisma.menuItem.findUnique({ where: { id } });
-  if (!item) {
+  const canViewUnavailable = (() => {
+    const adminKey = process.env.ADMIN_API_KEY;
+    const providedKey = req.headers['x-admin-key'];
+    if (adminKey && providedKey === adminKey) return true;
+    const payload = getOptionalAuthPayload(req);
+    return String(payload?.role || '').toLowerCase() === 'admin';
+  })();
+  if (!item || (!item.available && !canViewUnavailable)) {
     throw new ApiError(404, 'NOT_FOUND', 'Menu item not found.');
   }
   res.json({
@@ -485,6 +635,7 @@ app.get('/api/menu/:id', asyncHandler(async (req, res) => {
     imageUrl: item.imageUrl,
     price: item.price,
     rating: item.rating,
+    available: item.available,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   });
@@ -580,25 +731,7 @@ app.get('/api/orders', requireAdmin, asyncHandler(async (_, res) => {
     orderBy: { createdAt: 'desc' },
   });
 
-  res.json(
-    orders.map((order) => ({
-      id: order.id,
-      customerName: order.customerName,
-      phone: order.phone,
-      address: order.address,
-      latitude: order.latitude,
-      longitude: order.longitude,
-      paymentMethod: order.paymentMethod,
-      items: order.items.map((item) => ({
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-      })),
-      totalAmount: order.totalAmount,
-      status: order.status,
-      createdAt: order.createdAt,
-    })),
-  );
+  res.json(orders.map((order) => toOrderResponse(order)));
 }));
 
 app.get('/api/admin/orders', requireAdmin, asyncHandler(async (_, res) => {
@@ -633,23 +766,7 @@ app.get('/api/orders/:id', asyncHandler(async (req, res) => {
     }
   }
 
-  res.json({
-    id: order.id,
-    customerName: order.customerName,
-    phone: order.phone,
-    address: order.address,
-    latitude: order.latitude,
-    longitude: order.longitude,
-    paymentMethod: order.paymentMethod,
-    items: order.items.map((item) => ({
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity,
-    })),
-    totalAmount: order.totalAmount,
-    status: order.status,
-    createdAt: order.createdAt,
-  });
+  res.json(toOrderResponse(order));
 }));
 
 app.get('/api/my/orders', requireAuth, asyncHandler(async (req, res) => {
@@ -735,23 +852,9 @@ app.post('/api/orders', validateBody(orderCreateSchema), asyncHandler(async (req
     include: { items: true },
   });
 
-  return res.status(201).json({
-    id: created.id,
-    customerName: created.customerName,
-    phone: created.phone,
-    address: created.address,
-    latitude: created.latitude,
-    longitude: created.longitude,
-    paymentMethod: created.paymentMethod,
-    items: created.items.map((item) => ({
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity,
-    })),
-    totalAmount: created.totalAmount,
-    status: created.status,
-    createdAt: created.createdAt,
-  });
+  const response = toOrderResponse(created);
+  broadcastOrderEvent({ type: 'order:new', order: response });
+  return res.status(201).json(response);
 }));
 
 app.patch('/api/orders/:id/status', requireAdmin, validateBody(orderStatusSchema), asyncHandler(async (req, res) => {
@@ -762,11 +865,16 @@ app.patch('/api/orders/:id/status', requireAdmin, validateBody(orderStatusSchema
     data: { status },
     include: { items: true },
   });
-  res.json({
+  const response = {
     id: updated.id,
     status: updated.status,
     createdAt: updated.createdAt,
+  };
+  broadcastOrderEvent({
+    type: 'order:update',
+    order: toOrderResponse(updated),
   });
+  res.json(response);
 }));
 
 app.patch('/api/admin/order-status', requireAdmin, validateBody(adminOrderStatusSchema), asyncHandler(async (req, res) => {
@@ -806,8 +914,36 @@ app.use((error, _, res, __) => {
 async function start() {
   try {
     await prisma.$connect();
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Papichulo backend running on http://localhost:${PORT}`);
+    });
+
+    const wss = new WebSocketServer({
+      server,
+      path: '/ws/orders',
+    });
+
+    wss.on('connection', (socket, req) => {
+      if (!isAdminWebSocketRequest(req.url)) {
+        socket.close(1008, 'Admin access required');
+        return;
+      }
+
+      wsAdminClients.add(socket);
+      socket.send(
+        JSON.stringify({
+          type: 'connected',
+          message: 'admin-order-stream-ready',
+          timestamp: new Date().toISOString(),
+        }),
+      );
+
+      socket.on('close', () => {
+        wsAdminClients.delete(socket);
+      });
+      socket.on('error', () => {
+        wsAdminClients.delete(socket);
+      });
     });
   } catch (error) {
     console.error('Failed to start backend:', error.message);

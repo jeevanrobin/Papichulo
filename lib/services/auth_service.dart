@@ -9,7 +9,7 @@ import 'local_auth_storage.dart';
 class AuthUser {
   final int id;
   final String name;
-  final String email;
+  final String? email;
   final String role;
   final String? phone;
 
@@ -25,7 +25,7 @@ class AuthUser {
     return AuthUser(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name: (json['name'] ?? '').toString(),
-      email: (json['email'] ?? '').toString(),
+      email: json['email']?.toString(),
       role: (json['role'] ?? 'customer').toString(),
       phone: json['phone']?.toString(),
     );
@@ -149,6 +149,44 @@ class AuthService extends ChangeNotifier {
         'email': email,
         'phone': phone,
         'password': password,
+      });
+      _setSessionFromResponse(response.body);
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Map<String, dynamic>> sendOtp({required String phone}) async {
+    final normalized = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (normalized.length != 10) {
+      throw Exception('Enter a valid 10-digit mobile number');
+    }
+    final response = await _postWithFallback('/auth/send-otp', {
+      'phone': normalized,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Invalid send OTP response');
+    }
+    return decoded;
+  }
+
+  Future<void> verifyOtp({
+    required String phone,
+    required String otp,
+  }) async {
+    final normalizedPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    final normalizedOtp = otp.replaceAll(RegExp(r'[^0-9]'), '');
+    if (normalizedPhone.length != 10 || normalizedOtp.length != 6) {
+      throw Exception('Invalid phone or OTP');
+    }
+    _loading = true;
+    notifyListeners();
+    try {
+      final response = await _postWithFallback('/auth/verify-otp', {
+        'phone': normalizedPhone,
+        'otp': normalizedOtp,
       });
       _setSessionFromResponse(response.body);
     } finally {

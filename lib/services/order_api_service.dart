@@ -170,6 +170,79 @@ class OrderApiService {
     throw Exception('Invalid menu response format');
   }
 
+  Future<List<Map<String, dynamic>>> fetchAdminMenu() async {
+    final response = await _getWithFallback('/admin/menu');
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return decoded
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    }
+    throw Exception('Invalid admin menu response format');
+  }
+
+  Future<Map<String, dynamic>> createAdminMenuItem({
+    required String name,
+    required String category,
+    required String type,
+    required List<String> ingredients,
+    required String imageUrl,
+    required double price,
+    required double rating,
+    required bool available,
+  }) async {
+    final response = await _postWithFallback('/admin/menu', {
+      'name': name,
+      'category': category,
+      'type': type,
+      'ingredients': ingredients,
+      'imageUrl': imageUrl,
+      'price': price,
+      'rating': rating,
+      'available': available,
+    });
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    throw Exception('Invalid create menu response format');
+  }
+
+  Future<Map<String, dynamic>> updateAdminMenuItem({
+    required int id,
+    Map<String, dynamic> payload = const {},
+  }) async {
+    final response = await _putWithFallback('/admin/menu/$id', payload);
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+    throw Exception('Invalid update menu response format');
+  }
+
+  Future<void> deleteAdminMenuItem(int id) async {
+    Exception? lastError;
+    for (final baseUrl in _baseUrls) {
+      try {
+        final response = await _client.delete(
+          Uri.parse('$baseUrl/admin/menu/$id'),
+          headers: {..._authHeaders(), ..._adminHeaders()},
+        );
+        if (response.statusCode == 204 ||
+            (response.statusCode >= 200 && response.statusCode < 300)) {
+          return;
+        }
+        lastError = Exception(
+          _responseError('/admin/menu/$id', response, baseUrl),
+        );
+      } catch (error) {
+        lastError = Exception(error.toString());
+      }
+    }
+    throw lastError ?? Exception('Request failed (/admin/menu/$id)');
+  }
+
   Future<OrderRecord> createOrder({
     required String customerName,
     required String phone,

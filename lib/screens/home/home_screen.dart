@@ -1,19 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/menu_data.dart';
 import '../../widgets/fly_to_cart_button.dart';
 import '../../widgets/animated_cart_icon.dart';
 import '../../services/analytics_service.dart';
-import '../../services/api_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_api_service.dart';
 import '../../services/order_alert_service.dart';
-import '../orders/user_orders_screen.dart';
-import '../menu/menu_screen.dart';
-import '../admin/orders_admin_screen.dart';
 import '../cart/cart_drawer.dart';
 import '../../providers/cart_provider.dart';
 
@@ -306,29 +303,68 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ],
                     ],
                   ),
-                  Row(
-                    children: [
-                      _buildAnimatedNavItem(
-                        'Menu',
-                        () => Navigator.push(
-                          context,
-                          _createRoute(const MenuScreen()),
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      _buildAnimatedNavItem(
-                        'Admin',
-                        _openAdminOrders,
-                        badgeCountListenable:
-                            OrderAlertService.instance.pendingNewOrderCount,
-                      ),
-                      const SizedBox(width: 20),
-                      _buildUserProfileMenu(),
-                      const SizedBox(width: 20),
-                      _buildAnimatedCartIcon(),
-                      const SizedBox(width: 20),
-                      _buildHeaderCTA(),
-                    ],
+                  Consumer<AuthService>(
+                    builder: (context, auth, _) {
+                      return Row(
+                        children: [
+                          if (!auth.isAuthenticated) ...[
+                            _buildAnimatedNavItem(
+                              'Menu',
+                              () => context.push('/menu'),
+                            ),
+                            const SizedBox(width: 20),
+                            _buildAnimatedNavItem(
+                              'Login',
+                              () => _showAuthDialog(),
+                            ),
+                            const SizedBox(width: 20),
+                            _buildAnimatedCartIcon(),
+                          ] else if (auth.isAdmin) ...[
+                            _buildAnimatedNavItem(
+                              'Dashboard',
+                              () => context.go('/admin/dashboard'),
+                            ),
+                            const SizedBox(width: 20),
+                            _buildAnimatedNavItem(
+                              'Orders',
+                              _openAdminOrders,
+                              badgeCountListenable: OrderAlertService
+                                  .instance
+                                  .pendingNewOrderCount,
+                            ),
+                            const SizedBox(width: 20),
+                            _buildAnimatedNavItem(
+                              'Menu Management',
+                              () => context.go('/admin/menu'),
+                            ),
+                            const SizedBox(width: 20),
+                            _buildAnimatedNavItem('Logout', () {
+                              _handleProfileMenuSelection(
+                                _ProfileMenuAction.logout,
+                              );
+                            }),
+                            const SizedBox(width: 20),
+                            _buildAnimatedCartIcon(),
+                            const SizedBox(width: 20),
+                            _buildHeaderCTA(),
+                          ] else ...[
+                            _buildAnimatedNavItem(
+                              'Menu',
+                              () => context.push('/menu'),
+                            ),
+                            const SizedBox(width: 20),
+                            _buildAnimatedNavItem(
+                              'My Orders',
+                              () => context.push('/orders'),
+                            ),
+                            const SizedBox(width: 20),
+                            _buildUserProfileMenu(),
+                            const SizedBox(width: 20),
+                            _buildAnimatedCartIcon(),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -367,16 +403,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildHeaderCTA() {
-    return _HeaderCTAWidget(
-      onTap: () => Navigator.push(context, _createRoute(const MenuScreen())),
-    );
+    return _HeaderCTAWidget(onTap: () => context.push('/menu'));
   }
 
   void _openAdminOrders() {
     final auth = context.read<AuthService>();
-    final canOpen = auth.isAdmin || ApiConfig.adminKey.isNotEmpty;
+    final canOpen = auth.isAdmin;
     if (canOpen) {
-      Navigator.push(context, _createRoute(const OrdersAdminScreen()));
+      context.go('/admin/orders');
       return;
     }
     _showAuthDialog(adminRequired: true);
@@ -404,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _showAuthDialog();
           return;
         }
-        Navigator.push(context, _createRoute(const UserOrdersScreen()));
+        context.push('/orders');
         break;
       case _ProfileMenuAction.membership:
         _showUserInfoDialog(
@@ -438,199 +472,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     bool startWithSignup = false,
     bool adminRequired = false,
   }) async {
-    final nameController = TextEditingController();
-    final phoneController = TextEditingController();
-    final emailController = TextEditingController();
-    final passwordController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    var isSignup = startWithSignup;
-    var isBusy = false;
-    String? errorText;
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: !isBusy,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> submit() async {
-              final valid = formKey.currentState?.validate() ?? false;
-              if (!valid || isBusy) return;
-
-              setDialogState(() {
-                isBusy = true;
-                errorText = null;
-              });
-              try {
-                final auth = context.read<AuthService>();
-                if (isSignup) {
-                  await auth.signup(
-                    name: nameController.text.trim(),
-                    email: emailController.text.trim(),
-                    phone: phoneController.text.trim(),
-                    password: passwordController.text,
-                  );
-                } else {
-                  await auth.login(
-                    email: emailController.text.trim(),
-                    password: passwordController.text,
-                  );
-                }
-                if (!mounted) return;
-                if (adminRequired &&
-                    !(auth.isAdmin || ApiConfig.adminKey.isNotEmpty)) {
-                  setDialogState(() {
-                    errorText = 'Logged in, but this account is not admin.';
-                    isBusy = false;
-                  });
-                  return;
-                }
-                Navigator.pop(dialogContext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      isSignup
-                          ? 'Account created successfully.'
-                          : 'Logged in successfully.',
-                    ),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-                if (adminRequired) {
-                  _openAdminOrders();
-                }
-              } catch (error) {
-                setDialogState(() {
-                  errorText = error.toString().replaceFirst('Exception: ', '');
-                  isBusy = false;
-                });
-              }
-            }
-
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1F1F1F),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              title: Text(
-                isSignup ? 'Create account' : 'Login',
-                style: const TextStyle(
-                  color: goldYellow,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              content: Form(
-                key: formKey,
-                child: SizedBox(
-                  width: 380,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isSignup) ...[
-                        TextFormField(
-                          controller: nameController,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: const InputDecoration(
-                            labelText: 'Name',
-                            labelStyle: TextStyle(color: Colors.white70),
-                          ),
-                          validator: (v) => (v == null || v.trim().length < 2)
-                              ? 'Enter a valid name'
-                              : null,
-                        ),
-                        const SizedBox(height: 10),
-                        TextFormField(
-                          controller: phoneController,
-                          style: const TextStyle(color: Colors.white),
-                          keyboardType: TextInputType.phone,
-                          decoration: const InputDecoration(
-                            labelText: 'Phone',
-                            labelStyle: TextStyle(color: Colors.white70),
-                          ),
-                          validator: (v) => (v == null || v.trim().length < 10)
-                              ? 'Enter a valid phone'
-                              : null,
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                      TextFormField(
-                        controller: emailController,
-                        style: const TextStyle(color: Colors.white),
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          labelStyle: TextStyle(color: Colors.white70),
-                        ),
-                        validator: (v) => (v == null || !v.contains('@'))
-                            ? 'Enter a valid email'
-                            : null,
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: passwordController,
-                        style: const TextStyle(color: Colors.white),
-                        obscureText: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          labelStyle: TextStyle(color: Colors.white70),
-                        ),
-                        validator: (v) => (v == null || v.length < 6)
-                            ? 'Min 6 characters'
-                            : null,
-                      ),
-                      if (errorText != null) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          errorText!,
-                          style: const TextStyle(color: Colors.redAccent),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isBusy ? null : () => Navigator.pop(dialogContext),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: Colors.white70),
-                  ),
-                ),
-                TextButton(
-                  onPressed: isBusy
-                      ? null
-                      : () {
-                          setDialogState(() {
-                            isSignup = !isSignup;
-                            errorText = null;
-                          });
-                        },
-                  child: Text(
-                    isSignup ? 'Have an account? Login' : 'Create account',
-                    style: const TextStyle(color: goldYellow),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: isBusy ? null : submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: goldYellow,
-                    foregroundColor: Colors.black,
-                  ),
-                  child: isBusy
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(isSignup ? 'Sign up' : 'Login'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+    context.push('/auth/phone');
+    if (adminRequired && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Login with OTP to access admin routes.'),
+          backgroundColor: Colors.black87,
+        ),
+      );
+    }
   }
 
   void _showUserInfoDialog({required String title, required String message}) {
@@ -865,9 +715,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildPrimaryCTA() {
-    return _PrimaryCTAWidget(
-      onTap: () => Navigator.push(context, _createRoute(const MenuScreen())),
-    );
+    return _PrimaryCTAWidget(onTap: () => context.push('/menu'));
   }
 
   Widget _buildCategoryNav() {
@@ -1010,7 +858,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       onEnter: (_) => setState(() => _hoveredCards[index] = true),
       onExit: (_) => setState(() => _hoveredCards[index] = false),
       child: GestureDetector(
-        onTap: () => Navigator.push(context, _createRoute(const MenuScreen())),
+        onTap: () => context.push('/menu'),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           transform: Matrix4.translationValues(0, isHovered ? -8 : 0, 0),
@@ -1163,24 +1011,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     if (screenWidth >= 1200) return 480;
     if (screenWidth >= 768) return 450;
     return screenWidth;
-  }
-
-  Route _createRoute(Widget page) {
-    return PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => page,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        return SlideTransition(
-          position:
-              Tween<Offset>(
-                begin: const Offset(1.0, 0.0),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-              ),
-          child: child,
-        );
-      },
-    );
   }
 }
 
