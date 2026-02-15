@@ -3,7 +3,6 @@ pipeline {
 
   options {
     timestamps()
-    ansiColor('xterm')
     disableConcurrentBuilds()
   }
 
@@ -19,6 +18,16 @@ pipeline {
   }
 
   stages {
+    stage('Start') {
+      steps {
+        script {
+          echo "Pipeline started for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+          currentBuild.displayName = "#${env.BUILD_NUMBER} - ${env.BRANCH_NAME ?: 'branch-unknown'}"
+          currentBuild.description = "Start -> Build -> Deploy -> Success"
+        }
+      }
+    }
+
     stage('Checkout') {
       steps {
         checkout scm
@@ -48,6 +57,7 @@ pipeline {
 
     stage('Backend Build') {
       steps {
+        echo 'Building backend...'
         dir('backend') {
           sh 'npm ci'
           sh 'npx prisma generate'
@@ -57,6 +67,7 @@ pipeline {
 
     stage('Frontend Build (Flutter Web)') {
       steps {
+        echo 'Building frontend...'
         sh 'flutter pub get'
         sh """
           flutter build web --release \
@@ -71,6 +82,7 @@ pipeline {
         expression { env.DEPLOY_ENV == 'dev' || env.DEPLOY_ENV == 'prod' }
       }
       steps {
+        echo "Deploying to ${env.DEPLOY_ENV}..."
         withCredentials([
           file(credentialsId: "${env.BACKEND_ENV_FILE_CRED_ID}", variable: 'BACKEND_ENV_FILE'),
           string(credentialsId: "${env.REMOTE_HOST_CRED_ID}", variable: 'REMOTE_HOST'),
@@ -89,6 +101,12 @@ pipeline {
         }
       }
     }
+
+    stage('Success') {
+      steps {
+        echo 'Build and deployment stages completed successfully.'
+      }
+    }
   }
 
   post {
@@ -97,10 +115,10 @@ pipeline {
       cleanWs(deleteDirs: true)
     }
     success {
-      echo 'Pipeline completed successfully.'
+      echo 'SUCCESS: Pipeline completed.'
     }
     failure {
-      echo 'Pipeline failed.'
+      echo 'FAILED: Pipeline failed.'
     }
   }
 }
