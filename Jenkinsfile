@@ -37,11 +37,12 @@ pipeline {
     stage('Resolve Environment') {
       steps {
         script {
-          if (env.BRANCH_NAME == 'main') {
+          def branch = env.BRANCH_NAME ?: (env.GIT_BRANCH ? env.GIT_BRANCH.replaceFirst(/^origin\//, '') : '')
+          if (branch == 'main') {
             env.DEPLOY_ENV = 'prod'
             env.BACKEND_ENV_FILE_CRED_ID = 'papichulo-backend-env-prod-file'
             env.FRONTEND_API_BASE_URL = env.API_BASE_URL_PROD
-          } else if (env.BRANCH_NAME == 'dev') {
+          } else if (branch == 'dev') {
             env.DEPLOY_ENV = 'dev'
             env.BACKEND_ENV_FILE_CRED_ID = 'papichulo-backend-env-dev-file'
             env.FRONTEND_API_BASE_URL = env.API_BASE_URL_DEV
@@ -50,7 +51,7 @@ pipeline {
             env.BACKEND_ENV_FILE_CRED_ID = ''
             env.FRONTEND_API_BASE_URL = env.API_BASE_URL_DEV
           }
-          echo "Branch=${env.BRANCH_NAME}, deployEnv=${env.DEPLOY_ENV}"
+          echo "Branch=${branch ?: 'unknown'}, deployEnv=${env.DEPLOY_ENV}"
         }
       }
     }
@@ -59,8 +60,15 @@ pipeline {
       steps {
         echo 'Building backend...'
         dir('backend') {
-          sh 'npm ci'
-          sh 'npx prisma generate'
+          script {
+            if (isUnix()) {
+              sh 'npm ci'
+              sh 'npx prisma generate'
+            } else {
+              bat 'npm ci'
+              bat 'npx prisma generate'
+            }
+          }
         }
       }
     }
@@ -68,18 +76,25 @@ pipeline {
     stage('Frontend Build (Flutter Web)') {
       steps {
         echo 'Building frontend...'
-        sh 'flutter pub get'
-        sh """
-          flutter build web --release \
-            --base-href "/Papichulo/" \
-            --dart-define=API_BASE_URL=${env.FRONTEND_API_BASE_URL}
-        """
+        script {
+          if (isUnix()) {
+            sh 'flutter pub get'
+            sh """
+              flutter build web --release \
+                --base-href "/Papichulo/" \
+                --dart-define=API_BASE_URL=${env.FRONTEND_API_BASE_URL}
+            """
+          } else {
+            bat 'flutter pub get'
+            bat "flutter build web --release --base-href \"/Papichulo/\" --dart-define=API_BASE_URL=${env.FRONTEND_API_BASE_URL}"
+          }
+        }
       }
     }
 
     stage('Deploy') {
       when {
-        expression { env.DEPLOY_ENV == 'dev' || env.DEPLOY_ENV == 'prod' }
+        expression { (env.DEPLOY_ENV == 'dev' || env.DEPLOY_ENV == 'prod') && isUnix() }
       }
       steps {
         echo "Deploying to ${env.DEPLOY_ENV}..."
@@ -99,6 +114,15 @@ pipeline {
             ./scripts/deploy.sh
           '''
         }
+      }
+    }
+
+    stage('Deploy (Windows Notice)') {
+      when {
+        expression { (env.DEPLOY_ENV == 'dev' || env.DEPLOY_ENV == 'prod') && !isUnix() }
+      }
+      steps {
+        echo 'Deploy stage skipped: current Jenkins agent is Windows, deploy script expects Unix shell.'
       }
     }
 
