@@ -55,7 +55,13 @@ class AppRouter {
       GoRoute(
         path: '/auth/otp',
         builder: (context, state) {
-          final phone = state.uri.queryParameters['phone'] ?? '';
+          final phone = (state.uri.queryParameters['phone'] ?? '').replaceAll(
+            RegExp(r'[^0-9]'),
+            '',
+          );
+          if (phone.length != 10) {
+            return const PhoneLoginScreen();
+          }
           return OtpVerifyScreen(phone: phone);
         },
       ),

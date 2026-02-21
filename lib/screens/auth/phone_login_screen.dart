@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -46,7 +47,9 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       context.push('/auth/otp?phone=$digits');
     } catch (error) {
       if (!mounted) return;
-      setState(() => _errorText = error.toString().replaceFirst('Exception: ', ''));
+      setState(
+        () => _errorText = error.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
       if (mounted) {
         setState(() => _sending = false);
@@ -96,6 +99,10 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   maxLength: 10,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(10),
+                  ],
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
                     counterText: '',
@@ -106,24 +113,35 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                     filled: true,
                     fillColor: const Color(0xFF131313),
                     enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: goldYellow.withValues(alpha: 0.25)),
+                      borderSide: BorderSide(
+                        color: goldYellow.withValues(alpha: 0.25),
+                      ),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(color: goldYellow, width: 1.5),
+                      borderSide: const BorderSide(
+                        color: goldYellow,
+                        width: 1.5,
+                      ),
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
                 if (_errorText != null) ...[
                   const SizedBox(height: 10),
-                  Text(_errorText!, style: const TextStyle(color: Colors.redAccent)),
+                  Text(
+                    _errorText!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ],
                 if (_debugOtp != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Dev OTP: $_debugOtp',
-                    style: const TextStyle(color: Colors.greenAccent, fontSize: 12),
+                    style: const TextStyle(
+                      color: Colors.greenAccent,
+                      fontSize: 12,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 18),

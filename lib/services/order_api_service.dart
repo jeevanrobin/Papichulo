@@ -13,38 +13,7 @@ class OrderApiService {
 
   OrderApiService({http.Client? client}) : _client = client ?? http.Client();
 
-  List<String> get _baseUrls {
-    final primary = ApiConfig.baseUrl;
-    final candidates = <String>[primary];
-
-    void addIfMissing(String value) {
-      if (!candidates.contains(value)) {
-        candidates.add(value);
-      }
-    }
-
-    if (primary.contains('localhost:3001')) {
-      addIfMissing(primary.replaceFirst('localhost:3001', 'localhost:3011'));
-    } else if (primary.contains('localhost:3011')) {
-      addIfMissing(primary.replaceFirst('localhost:3011', 'localhost:3001'));
-    }
-
-    if (primary.contains('127.0.0.1:3001')) {
-      addIfMissing(primary.replaceFirst('127.0.0.1:3001', '127.0.0.1:3011'));
-    } else if (primary.contains('127.0.0.1:3011')) {
-      addIfMissing(primary.replaceFirst('127.0.0.1:3011', '127.0.0.1:3001'));
-    }
-
-    for (final url in List<String>.from(candidates)) {
-      if (url.contains('localhost')) {
-        addIfMissing(url.replaceFirst('localhost', '127.0.0.1'));
-      } else if (url.contains('127.0.0.1')) {
-        addIfMissing(url.replaceFirst('127.0.0.1', 'localhost'));
-      }
-    }
-
-    return candidates;
-  }
+  List<String> get _baseUrls => ApiConfig.candidateBaseUrls();
 
   Future<http.Response> _getWithFallback(String path) async {
     Exception? lastError;

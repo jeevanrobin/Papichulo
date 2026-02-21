@@ -21,6 +21,13 @@ const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 120);
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || '';
 const jwtSecret = process.env.JWT_SECRET || 'papichulo-dev-secret-change-this';
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
+const otpProvider = String(process.env.OTP_PROVIDER || 'console').toLowerCase();
+const otpDebugMode = String(process.env.EXPOSE_DEBUG_OTP || '').toLowerCase() === 'true';
+const otpMessageTemplate = process.env.OTP_MESSAGE_TEMPLATE
+  || 'Your Papichulo OTP is {{OTP}}. Valid for {{MINUTES}} minutes.';
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || '';
+const twilioFromNumber = process.env.TWILIO_FROM_NUMBER || '';
 const wsAdminClients = new Set();
 const { requireAdmin, requireAuth } = makeRbacMiddleware({
   jwtSecret,
@@ -81,11 +88,11 @@ const loginSchema = z.object({
 }).strict();
 
 const otpSendSchema = z.object({
-  phone: z.string().trim().regex(/^[0-9]{10}$/),
+  phone: z.string().trim().regex(/^[0-9+\-\s]{7,15}$/),
 }).strict();
 
 const otpVerifySchema = z.object({
-  phone: z.string().trim().regex(/^[0-9]{10}$/),
+  phone: z.string().trim().regex(/^[0-9+\-\s]{7,15}$/),
   otp: z.string().trim().regex(/^[0-9]{6}$/),
 }).strict();
 
@@ -133,8 +140,79 @@ function normalizePhone(phone) {
   return String(phone || '').replace(/[^0-9]/g, '').slice(-10);
 }
 
+function maskPhone(phone) {
+  const value = normalizePhone(phone);
+  if (value.length != 10) return value;
+  return `******${value.slice(-4)}`;
+}
+
 function generateOtpCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function toE164IndianPhone(phone) {
+  const value = normalizePhone(phone);
+  if (value.length !== 10) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Phone must be 10 digits.');
+  }
+  return `+91${value}`;
+}
+
+function buildOtpMessage(code, validForMinutes = 5) {
+  return otpMessageTemplate
+    .replaceAll('{{OTP}}', code)
+    .replaceAll('{{MINUTES}}', String(validForMinutes));
+}
+
+async function sendOtpSmsViaTwilio(phone, code) {
+  if (!twilioAccountSid || !twilioAuthToken || !twilioFromNumber) {
+    throw new ApiError(
+      500,
+      'OTP_PROVIDER_CONFIG_MISSING',
+      'Twilio configuration is missing. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER.',
+    );
+  }
+
+  const to = toE164IndianPhone(phone);
+  const body = buildOtpMessage(code, 5);
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+  const auth = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      To: to,
+      From: twilioFromNumber,
+      Body: body,
+    }).toString(),
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new ApiError(502, 'OTP_DELIVERY_FAILED', 'Failed to send OTP SMS.', details);
+  }
+}
+
+async function sendOtpCode(phone, code) {
+  if (otpProvider === 'twilio') {
+    await sendOtpSmsViaTwilio(phone, code);
+    return;
+  }
+
+  if (otpProvider !== 'console') {
+    throw new ApiError(
+      500,
+      'OTP_PROVIDER_UNSUPPORTED',
+      `Unsupported OTP_PROVIDER "${otpProvider}". Use "console" or "twilio".`,
+    );
+  }
+
+  // Default/dev mode: print OTP in server logs.
+  console.log(`[OTP] ${phone}: ${code}`);
 }
 
 function signUserToken(user) {
@@ -307,7 +385,10 @@ async function reverseGeocode(latitude, longitude) {
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (allowedOrigins.includes(origin)) return true;
-  return /^http:\/\/localhost:\d+$/.test(origin);
+  if (/^https?:\/\/localhost:\d+$/.test(origin)) return true;
+  if (/^https?:\/\/127\.0\.0\.1:\d+$/.test(origin)) return true;
+  if (/^https?:\/\/\[::1\]:\d+$/.test(origin)) return true;
+  return false;
 }
 
 function validateBody(schema) {
@@ -443,51 +524,81 @@ app.post('/api/auth/send-otp', validateBody(otpSendSchema), asyncHandler(async (
   }
 
   const now = new Date();
-  const existing = await prisma.oTP.findFirst({
-    where: { phone },
-    orderBy: { createdAt: 'desc' },
+  await prisma.oTP.deleteMany({
+    where: {
+      OR: [
+        { expiresAt: { lte: now } },
+        { attempts: { gte: 5 } },
+      ],
+    },
   });
 
-  if (existing) {
-    const notExpired = existing.expiresAt > now;
-    if (notExpired && existing.resendCount >= 3) {
-      throw new ApiError(429, 'OTP_LIMIT_REACHED', 'Maximum OTP resend limit reached. Try again later.');
-    }
+  const activeOtp = await prisma.oTP.findFirst({
+    where: {
+      phone,
+      expiresAt: { gt: now },
+    },
+    orderBy: { id: 'desc' },
+  });
+
+  if (activeOtp && activeOtp.resendCount >= 3) {
+    throw new ApiError(429, 'OTP_LIMIT_REACHED', 'Maximum OTP resend limit reached. Try again later.');
   }
 
   const otp = generateOtpCode();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-  const resendCount = existing && existing.expiresAt > now ? existing.resendCount + 1 : 1;
+  const resendCount = activeOtp ? activeOtp.resendCount + 1 : 1;
 
-  await prisma.oTP.create({
-    data: {
-      phone,
-      code: otp,
-      expiresAt,
-      resendCount,
-      attempts: 0,
-    },
-  });
+  if (activeOtp) {
+    await prisma.oTP.update({
+      where: { id: activeOtp.id },
+      data: {
+        code: otp,
+        expiresAt,
+        attempts: 0,
+        resendCount,
+      },
+    });
+  } else {
+    await prisma.oTP.create({
+      data: {
+        phone,
+        code: otp,
+        expiresAt,
+        resendCount,
+        attempts: 0,
+      },
+    });
+  }
 
-  // TODO: Replace console logging with SMS provider integration (MSG91/Fast2SMS/Twilio).
-  console.log(`[OTP] ${phone}: ${otp}`);
+  await sendOtpCode(phone, otp);
+
+  const showDebugOtp = otpDebugMode || (process.env.NODE_ENV !== 'production' && otpProvider === 'console');
 
   res.json({
     ok: true,
     message: 'OTP sent successfully.',
+    phoneMasked: maskPhone(phone),
+    deliveryProvider: otpProvider,
     expiresInSeconds: 300,
-    ...(process.env.NODE_ENV === 'production' ? {} : { debugOtp: otp }),
+    ...(showDebugOtp ? { debugOtp: otp } : {}),
   });
 }));
 
 app.post('/api/auth/verify-otp', validateBody(otpVerifySchema), asyncHandler(async (req, res) => {
   const phone = normalizePhone(req.body.phone);
   const otp = String(req.body.otp || '').trim();
+  if (!/^[0-9]{10}$/.test(phone)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Phone must be 10 digits.');
+  }
   const now = new Date();
 
   const record = await prisma.oTP.findFirst({
-    where: { phone },
-    orderBy: { createdAt: 'desc' },
+    where: {
+      phone,
+      expiresAt: { gt: now },
+    },
+    orderBy: { id: 'desc' },
   });
 
   if (!record || record.expiresAt <= now) {

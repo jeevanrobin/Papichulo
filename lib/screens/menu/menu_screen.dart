@@ -572,7 +572,9 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
           .toList(growable: false);
 
       if (liveItems.isEmpty) {
-        throw Exception('No menu items returned from server.');
+        throw Exception(
+          'Backend reachable, but no menu items found. Seed menu data (npm run prisma:seed).',
+        );
       }
 
       if (!mounted) return;
@@ -580,12 +582,15 @@ class _MenuScreenState extends State<MenuScreen> with TickerProviderStateMixin {
         _menuItems = liveItems;
         _isMenuLoading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
+      final message = error.toString();
       setState(() {
         // Keep local menu fallback if API is unavailable.
         _isMenuLoading = false;
-        _menuLoadError = 'Using local menu fallback (backend not reachable).';
+        _menuLoadError = message.contains('no menu items found')
+            ? 'Using local fallback. Backend has no menu data. Run: npm run prisma:seed'
+            : 'Using local menu fallback (backend not reachable).';
       });
     }
   }
@@ -725,7 +730,10 @@ class _MenuItemState extends State<_MenuItem> {
               top: 10,
               left: 10,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: badge.color,
                   borderRadius: BorderRadius.circular(999),
@@ -805,7 +813,9 @@ class _MenuItemState extends State<_MenuItem> {
                                   ),
                                 )
                               : Image.asset(
-                                  _fallbackAssetForCategory(widget.item.category),
+                                  _fallbackAssetForCategory(
+                                    widget.item.category,
+                                  ),
                                   fit: BoxFit.cover,
                                 ),
                         ),
@@ -918,7 +928,9 @@ class _MenuItemState extends State<_MenuItem> {
                                 boxShadow: _isHovered
                                     ? [
                                         BoxShadow(
-                                          color: goldYellow.withValues(alpha: 0.35),
+                                          color: goldYellow.withValues(
+                                            alpha: 0.35,
+                                          ),
                                           blurRadius: 12,
                                           spreadRadius: 1,
                                         ),

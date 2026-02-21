@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -17,13 +19,24 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
   static const Color goldYellow = Color(0xFFFFD700);
   final List<TextEditingController> _controllers =
       List<TextEditingController>.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes =
-      List<FocusNode>.generate(6, (_) => FocusNode());
+  final List<FocusNode> _focusNodes = List<FocusNode>.generate(
+    6,
+    (_) => FocusNode(),
+  );
   String? _errorText;
   bool _verifying = false;
+  Timer? _resendTimer;
+  int _resendInSeconds = 30;
+
+  @override
+  void initState() {
+    super.initState();
+    _startResendCooldown();
+  }
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     for (final controller in _controllers) {
       controller.dispose();
     }
@@ -34,6 +47,37 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
   }
 
   String get _otp => _controllers.map((controller) => controller.text).join();
+
+  void _startResendCooldown({int seconds = 30}) {
+    _resendTimer?.cancel();
+    setState(() => _resendInSeconds = seconds);
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_resendInSeconds <= 1) {
+        timer.cancel();
+        setState(() => _resendInSeconds = 0);
+      } else {
+        setState(() => _resendInSeconds -= 1);
+      }
+    });
+  }
+
+  void _fillOtpFromText(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    final usable = digits.length > 6 ? digits.substring(0, 6) : digits;
+    for (var i = 0; i < _controllers.length; i++) {
+      _controllers[i].text = i < usable.length ? usable[i] : '';
+    }
+    if (usable.length == 6) {
+      _focusNodes.last.unfocus();
+    } else if (usable.isNotEmpty) {
+      final nextIndex = usable.length < 6 ? usable.length : 5;
+      _focusNodes[nextIndex].requestFocus();
+    }
+  }
 
   Future<void> _verify() async {
     if (_verifying) return;
@@ -48,13 +92,18 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
     });
 
     try {
-      await context.read<AuthService>().verifyOtp(phone: widget.phone, otp: _otp);
+      await context.read<AuthService>().verifyOtp(
+        phone: widget.phone,
+        otp: _otp,
+      );
       if (!mounted) return;
       final isAdmin = context.read<AuthService>().isAdmin;
       context.go(isAdmin ? '/admin/dashboard' : '/');
     } catch (error) {
       if (!mounted) return;
-      setState(() => _errorText = error.toString().replaceFirst('Exception: ', ''));
+      setState(
+        () => _errorText = error.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
       if (mounted) {
         setState(() => _verifying = false);
@@ -63,9 +112,11 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
   }
 
   Future<void> _resend() async {
+    if (_resendInSeconds > 0 || _verifying) return;
     try {
       await context.read<AuthService>().sendOtp(phone: widget.phone);
       if (!mounted) return;
+      _startResendCooldown();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('OTP resent'),
@@ -84,6 +135,10 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
   }
 
   void _onDigitChanged(int index, String value) {
+    if (value.length > 1) {
+      _fillOtpFromText(value);
+      return;
+    }
     if (value.isNotEmpty && index < _focusNodes.length - 1) {
       _focusNodes[index + 1].requestFocus();
     } else if (value.isEmpty && index > 0) {
@@ -167,7 +222,10 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
                 ),
                 if (_errorText != null) ...[
                   const SizedBox(height: 10),
-                  Text(_errorText!, style: const TextStyle(color: Colors.redAccent)),
+                  Text(
+                    _errorText!,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
                 ],
                 const SizedBox(height: 18),
                 SizedBox(
@@ -194,12 +252,19 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _resend,
-                    child: const Text(
-                      'Resend OTP',
-                      style: TextStyle(color: goldYellow),
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: _resendInSeconds > 0 ? null : _resend,
+                        child: Text(
+                          _resendInSeconds > 0
+                              ? 'Resend OTP (${_resendInSeconds}s)'
+                              : 'Resend OTP',
+                          style: const TextStyle(color: goldYellow),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

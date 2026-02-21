@@ -61,38 +61,7 @@ class AuthService extends ChangeNotifier {
   bool get isAuthenticated => _token != null && _user != null;
   bool get isAdmin => (_user?.role.toLowerCase() ?? '') == 'admin';
 
-  List<String> get _baseUrls {
-    final primary = ApiConfig.baseUrl;
-    final candidates = <String>[primary];
-
-    void addIfMissing(String value) {
-      if (!candidates.contains(value)) {
-        candidates.add(value);
-      }
-    }
-
-    if (primary.contains('localhost:3001')) {
-      addIfMissing(primary.replaceFirst('localhost:3001', 'localhost:3011'));
-    } else if (primary.contains('localhost:3011')) {
-      addIfMissing(primary.replaceFirst('localhost:3011', 'localhost:3001'));
-    }
-
-    if (primary.contains('127.0.0.1:3001')) {
-      addIfMissing(primary.replaceFirst('127.0.0.1:3001', '127.0.0.1:3011'));
-    } else if (primary.contains('127.0.0.1:3011')) {
-      addIfMissing(primary.replaceFirst('127.0.0.1:3011', '127.0.0.1:3001'));
-    }
-
-    for (final url in List<String>.from(candidates)) {
-      if (url.contains('localhost')) {
-        addIfMissing(url.replaceFirst('localhost', '127.0.0.1'));
-      } else if (url.contains('127.0.0.1')) {
-        addIfMissing(url.replaceFirst('127.0.0.1', 'localhost'));
-      }
-    }
-
-    return candidates;
-  }
+  List<String> get _baseUrls => ApiConfig.candidateBaseUrls();
 
   Future<void> bootstrap() async {
     if (_bootstrapped) return;
@@ -150,7 +119,7 @@ class AuthService extends ChangeNotifier {
         'phone': phone,
         'password': password,
       });
-      _setSessionFromResponse(response.body);
+      await _setSessionFromResponse(response.body);
     } finally {
       _loading = false;
       notifyListeners();
@@ -172,10 +141,7 @@ class AuthService extends ChangeNotifier {
     return decoded;
   }
 
-  Future<void> verifyOtp({
-    required String phone,
-    required String otp,
-  }) async {
+  Future<void> verifyOtp({required String phone, required String otp}) async {
     final normalizedPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
     final normalizedOtp = otp.replaceAll(RegExp(r'[^0-9]'), '');
     if (normalizedPhone.length != 10 || normalizedOtp.length != 6) {
@@ -188,7 +154,7 @@ class AuthService extends ChangeNotifier {
         'phone': normalizedPhone,
         'otp': normalizedOtp,
       });
-      _setSessionFromResponse(response.body);
+      await _setSessionFromResponse(response.body);
     } finally {
       _loading = false;
       notifyListeners();
@@ -203,7 +169,7 @@ class AuthService extends ChangeNotifier {
         'email': email,
         'password': password,
       });
-      _setSessionFromResponse(response.body);
+      await _setSessionFromResponse(response.body);
     } finally {
       _loading = false;
       notifyListeners();
@@ -217,7 +183,7 @@ class AuthService extends ChangeNotifier {
     if (!silent) notifyListeners();
   }
 
-  void _setSessionFromResponse(String body) {
+  Future<void> _setSessionFromResponse(String body) async {
     final decoded = jsonDecode(body);
     if (decoded is! Map<String, dynamic>) {
       throw Exception('Invalid auth response');
@@ -229,7 +195,7 @@ class AuthService extends ChangeNotifier {
     }
     _token = token;
     _user = AuthUser.fromJson(userJson);
-    _persist();
+    await _persist();
   }
 
   Future<void> _persist() async {
@@ -243,25 +209,36 @@ class AuthService extends ChangeNotifier {
     Map<String, String>? headers,
   }) async {
     Exception? lastError;
+    var hadNetworkError = false;
+    var hadHttpResponse = false;
     for (final baseUrl in _baseUrls) {
       try {
         final response = await _client.get(
           Uri.parse('$baseUrl$path'),
           headers: headers,
         );
+        hadHttpResponse = true;
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response;
         }
         lastError = Exception(_extractError(response, baseUrl, path));
       } catch (error) {
+        hadNetworkError = true;
         lastError = Exception(error.toString());
       }
+    }
+    if (hadNetworkError && !hadHttpResponse) {
+      throw Exception(
+        'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
+      );
     }
     throw lastError ?? Exception('Request failed ($path)');
   }
 
   Future<http.Response> _postWithFallback(String path, Object payload) async {
     Exception? lastError;
+    var hadNetworkError = false;
+    var hadHttpResponse = false;
     for (final baseUrl in _baseUrls) {
       try {
         final response = await _client.post(
@@ -269,13 +246,20 @@ class AuthService extends ChangeNotifier {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(payload),
         );
+        hadHttpResponse = true;
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response;
         }
         lastError = Exception(_extractError(response, baseUrl, path));
       } catch (error) {
+        hadNetworkError = true;
         lastError = Exception(error.toString());
       }
+    }
+    if (hadNetworkError && !hadHttpResponse) {
+      throw Exception(
+        'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
+      );
     }
     throw lastError ?? Exception('Request failed ($path)');
   }

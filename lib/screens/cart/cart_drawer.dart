@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -652,10 +653,14 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                         label: 'Phone',
                         icon: Icons.phone_outlined,
                         keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(10),
+                        ],
                         validator: (v) {
                           final value = (v ?? '').trim();
                           final digits = value.replaceAll(RegExp(r'\D'), '');
-                          return digits.length < 10
+                          return digits.length != 10
                               ? 'Enter a valid phone number'
                               : null;
                         },
@@ -1311,6 +1316,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     required IconData icon,
     required String? Function(String?) validator,
     TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
     int maxLines = 1,
     bool readOnly = false,
     VoidCallback? onTap,
@@ -1318,6 +1324,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
       maxLines: maxLines,
       readOnly: readOnly,
       onTap: onTap,
