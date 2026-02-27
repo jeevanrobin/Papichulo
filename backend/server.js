@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient, Prisma } = require('@prisma/client');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const bcrypt = require('bcryptjs');
@@ -86,6 +86,14 @@ const loginSchema = z.object({
   email: z.string().trim().email().max(120),
   password: z.string().min(6).max(100),
 }).strict();
+
+const profileUpdateSchema = z.object({
+  name: z.string().trim().min(2).max(80).optional(),
+  email: z.string().trim().email().max(120).nullable().optional(),
+}).strict().refine(
+  (payload) => Object.keys(payload).length > 0,
+  { message: 'At least one field is required.' },
+);
 
 const otpSendSchema = z.object({
   phone: z.string().trim().regex(/^[0-9+\-\s]{7,15}$/),
@@ -696,6 +704,42 @@ app.get('/api/me', requireAuth, asyncHandler(async (req, res) => {
     throw new ApiError(404, 'NOT_FOUND', 'User not found.');
   }
   res.json(toUserResponse(user));
+}));
+
+app.patch('/api/me', requireAuth, validateBody(profileUpdateSchema), asyncHandler(async (req, res) => {
+  const userId = Number(req.user.sub);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Invalid user token.');
+  }
+
+  const updateData = {};
+  if (typeof req.body.name === 'string') {
+    updateData.name = req.body.name.trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body, 'email')) {
+    const email = req.body.email;
+    updateData.email = typeof email === 'string'
+      ? email.trim().toLowerCase()
+      : null;
+  }
+
+  try {
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+    });
+    res.json(toUserResponse(updated));
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2025') {
+        throw new ApiError(404, 'NOT_FOUND', 'User not found.');
+      }
+      if (error.code === 'P2002') {
+        throw new ApiError(409, 'EMAIL_EXISTS', 'This email is already in use.');
+      }
+    }
+    throw error;
+  }
 }));
 
 app.post('/api/cart', validateBody(cartSchema), asyncHandler(async (req, res) => {

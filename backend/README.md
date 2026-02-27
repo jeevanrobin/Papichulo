@@ -35,6 +35,8 @@ This backend now uses a real database via Prisma (SQLite for MVP).
 - `PATCH /api/orders/:id/status` (admin)
 - `POST /api/auth/send-otp`
 - `POST /api/auth/verify-otp`
+- `GET /api/me`
+- `PATCH /api/me`
 
 ## Notes
 

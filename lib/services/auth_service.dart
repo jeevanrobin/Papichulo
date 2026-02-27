@@ -12,6 +12,7 @@ class AuthUser {
   final String? email;
   final String role;
   final String? phone;
+  final DateTime? createdAt;
 
   const AuthUser({
     required this.id,
@@ -19,6 +20,7 @@ class AuthUser {
     required this.email,
     required this.role,
     this.phone,
+    this.createdAt,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,7 @@ class AuthUser {
       email: json['email']?.toString(),
       role: (json['role'] ?? 'customer').toString(),
       phone: json['phone']?.toString(),
+      createdAt: DateTime.tryParse((json['createdAt'] ?? '').toString()),
     );
   }
 
@@ -37,6 +40,7 @@ class AuthUser {
     'email': email,
     'role': role,
     'phone': phone,
+    'createdAt': createdAt?.toIso8601String(),
   };
 }
 
@@ -176,6 +180,33 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  Future<void> updateProfile({required String name, String? email}) async {
+    if (_token == null || _user == null) {
+      throw Exception('Please login first.');
+    }
+
+    final normalizedName = name.trim();
+    final normalizedEmail = (email ?? '').trim();
+
+    final response = await _patchWithFallback(
+      '/me',
+      {
+        'name': normalizedName,
+        'email': normalizedEmail.isEmpty ? null : normalizedEmail,
+      },
+      headers: {'Authorization': 'Bearer $_token'},
+    );
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Invalid profile update response');
+    }
+
+    _user = AuthUser.fromJson(decoded);
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> logout({bool silent = false}) async {
     _token = null;
     _user = null;
@@ -208,7 +239,8 @@ class AuthService extends ChangeNotifier {
     String path, {
     Map<String, String>? headers,
   }) async {
-    Exception? lastError;
+    Exception? httpError;
+    Exception? lastNetworkError;
     var hadNetworkError = false;
     var hadHttpResponse = false;
     for (final baseUrl in _baseUrls) {
@@ -221,22 +253,26 @@ class AuthService extends ChangeNotifier {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response;
         }
-        lastError = Exception(_extractError(response, baseUrl, path));
+        httpError ??= Exception(_extractError(response, baseUrl, path));
       } catch (error) {
         hadNetworkError = true;
-        lastError = Exception(error.toString());
+        lastNetworkError = Exception(error.toString());
       }
+    }
+    if (hadHttpResponse && httpError != null) {
+      throw httpError;
     }
     if (hadNetworkError && !hadHttpResponse) {
       throw Exception(
         'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
       );
     }
-    throw lastError ?? Exception('Request failed ($path)');
+    throw lastNetworkError ?? Exception('Request failed ($path)');
   }
 
   Future<http.Response> _postWithFallback(String path, Object payload) async {
-    Exception? lastError;
+    Exception? httpError;
+    Exception? lastNetworkError;
     var hadNetworkError = false;
     var hadHttpResponse = false;
     for (final baseUrl in _baseUrls) {
@@ -250,18 +286,58 @@ class AuthService extends ChangeNotifier {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return response;
         }
-        lastError = Exception(_extractError(response, baseUrl, path));
+        httpError ??= Exception(_extractError(response, baseUrl, path));
       } catch (error) {
         hadNetworkError = true;
-        lastError = Exception(error.toString());
+        lastNetworkError = Exception(error.toString());
       }
+    }
+    if (hadHttpResponse && httpError != null) {
+      throw httpError;
     }
     if (hadNetworkError && !hadHttpResponse) {
       throw Exception(
         'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
       );
     }
-    throw lastError ?? Exception('Request failed ($path)');
+    throw lastNetworkError ?? Exception('Request failed ($path)');
+  }
+
+  Future<http.Response> _patchWithFallback(
+    String path,
+    Object payload, {
+    Map<String, String>? headers,
+  }) async {
+    Exception? httpError;
+    Exception? lastNetworkError;
+    var hadNetworkError = false;
+    var hadHttpResponse = false;
+    for (final baseUrl in _baseUrls) {
+      try {
+        final response = await _client.patch(
+          Uri.parse('$baseUrl$path'),
+          headers: {'Content-Type': 'application/json', ...?headers},
+          body: jsonEncode(payload),
+        );
+        hadHttpResponse = true;
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return response;
+        }
+        httpError ??= Exception(_extractError(response, baseUrl, path));
+      } catch (error) {
+        hadNetworkError = true;
+        lastNetworkError = Exception(error.toString());
+      }
+    }
+    if (hadHttpResponse && httpError != null) {
+      throw httpError;
+    }
+    if (hadNetworkError && !hadHttpResponse) {
+      throw Exception(
+        'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
+      );
+    }
+    throw lastNetworkError ?? Exception('Request failed ($path)');
   }
 
   String _extractError(http.Response response, String baseUrl, String path) {

@@ -50,9 +50,7 @@ class ApiConfig {
     if (uri.hasPort) {
       ports.add(uri.port);
     }
-    ports
-      ..add(3001)
-      ..add(3011);
+    ports.add(3001);
 
     for (final hostVariant in hostVariants) {
       for (final port in ports) {

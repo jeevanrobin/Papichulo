@@ -1,3 +1,23 @@
+class OrderLineItem {
+  final String name;
+  final double price;
+  final int quantity;
+
+  const OrderLineItem({
+    required this.name,
+    required this.price,
+    required this.quantity,
+  });
+
+  factory OrderLineItem.fromJson(Map<String, dynamic> json) {
+    return OrderLineItem(
+      name: (json['name'] ?? '').toString(),
+      price: (json['price'] as num?)?.toDouble() ?? 0,
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class OrderRecord {
   final String id;
   final String customerName;
@@ -7,6 +27,7 @@ class OrderRecord {
   final String status;
   final double totalAmount;
   final int itemCount;
+  final List<OrderLineItem> items;
   final DateTime createdAt;
 
   OrderRecord({
@@ -18,11 +39,23 @@ class OrderRecord {
     required this.status,
     required this.totalAmount,
     required this.itemCount,
+    required this.items,
     required this.createdAt,
   });
 
   factory OrderRecord.fromJson(Map<String, dynamic> json) {
-    final items = (json['items'] as List?) ?? const [];
+    final itemsJson = (json['items'] as List?) ?? const [];
+    final items = itemsJson
+        .whereType<Map>()
+        .map(
+          (entry) => OrderLineItem.fromJson(Map<String, dynamic>.from(entry)),
+        )
+        .toList();
+    final itemCountFromQuantity = items.fold<int>(
+      0,
+      (sum, item) => sum + (item.quantity > 0 ? item.quantity : 0),
+    );
+
     return OrderRecord(
       id: (json['id'] ?? '').toString(),
       customerName: (json['customerName'] ?? '').toString(),
@@ -31,8 +64,13 @@ class OrderRecord {
       paymentMethod: (json['paymentMethod'] ?? '').toString(),
       status: (json['status'] ?? 'new').toString(),
       totalAmount: (json['totalAmount'] as num?)?.toDouble() ?? 0,
-      itemCount: items.length,
-      createdAt: DateTime.tryParse((json['createdAt'] ?? '').toString()) ?? DateTime.now(),
+      itemCount: itemCountFromQuantity > 0
+          ? itemCountFromQuantity
+          : items.length,
+      items: items,
+      createdAt:
+          DateTime.tryParse((json['createdAt'] ?? '').toString()) ??
+          DateTime.now(),
     );
   }
 }

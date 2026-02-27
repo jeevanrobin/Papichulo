@@ -39,9 +39,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String _headerLocationLabel = 'Detecting location...';
   bool _isHeaderLocationLoading = false;
   static const String _guestDisplayName = 'Guest';
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  bool _isSearchFocused = false;
 
-  String _selectedCategory = 'Pizza';
+  String _selectedCategory = 'All';
   final List<String> _categories = [
+    'All',
     'Pizza',
     'Burgers',
     'Sandwiches',
@@ -49,6 +53,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     'Snacks',
     'Specials',
   ];
+  final Map<String, IconData> _categoryIcons = const {
+    'All': Icons.dinner_dining_outlined,
+    'Pizza': Icons.local_pizza_outlined,
+    'Burgers': Icons.lunch_dining_outlined,
+    'Sandwiches': Icons.breakfast_dining_outlined,
+    'Hot Dogs': Icons.restaurant_menu_outlined,
+    'Snacks': Icons.local_cafe_outlined,
+    'Specials': Icons.auto_awesome_outlined,
+  };
 
   @override
   void initState() {
@@ -142,6 +155,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _headerController.dispose();
     _heroController.dispose();
     _cardController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -162,6 +176,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: SafeArea(
               child: Column(
                 children: [
+                  _buildPromoStrip(),
                   _buildAnimatedHeader(),
                   Expanded(
                     child: SingleChildScrollView(
@@ -234,6 +249,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPromoStrip() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF1A1500), Color(0xFF2A2000), Color(0xFF1A1500)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        border: Border(bottom: BorderSide(color: Color(0x2AF5C842))),
+      ),
+      child: Text(
+        'FREE DELIVERY on your first order | Use code PAPIFIRST',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: goldYellow,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -426,12 +465,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _showAuthDialog(startWithSignup: true);
         break;
       case _ProfileMenuAction.profile:
-        _showUserInfoDialog(
-          title: 'Profile',
-          message: auth.isAuthenticated
-              ? 'Name: ${auth.user?.name ?? '-'}\nEmail: ${auth.user?.email ?? '-'}\nPhone: ${auth.user?.phone ?? '-'}'
-              : 'Please login to view profile.',
-        );
+        if (!auth.isAuthenticated) {
+          _showAuthDialog();
+          return;
+        }
+        context.push('/profile');
         break;
       case _ProfileMenuAction.orders:
         if (!auth.isAuthenticated) {
@@ -601,6 +639,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return AnimatedBuilder(
       animation: _heroFade,
       builder: (context, child) {
+        final isDesktop = MediaQuery.of(context).size.width > 980;
         return Opacity(
           opacity: _heroFade.value,
           child: RepaintBoundary(
@@ -612,7 +651,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     horizontal: MediaQuery.of(context).size.width > 768
                         ? 60
                         : 24,
-                    vertical: MediaQuery.of(context).size.width > 768 ? 75 : 45,
+                    vertical: MediaQuery.of(context).size.width > 768 ? 62 : 34,
                   ),
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
@@ -631,31 +670,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  child: MediaQuery.of(context).size.width > 768
+                  child: isDesktop
                       ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Expanded(child: _buildHeroContent()),
-                            Expanded(
-                              child: Center(
-                                child: Container(
-                                  width: 225,
-                                  height: 225,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: RadialGradient(
-                                      colors: [
-                                        goldYellow.withOpacity(0.12),
-                                        goldYellow.withOpacity(0.04),
-                                        Colors.transparent,
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                            Expanded(flex: 6, child: _buildHeroContent()),
+                            const SizedBox(width: 32),
+                            Expanded(flex: 5, child: _buildHeroMediaPanel()),
                           ],
                         )
-                      : _buildHeroContent(),
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildHeroContent(),
+                            const SizedBox(height: 20),
+                            _buildHeroMediaPanel(compact: true),
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -708,14 +739,283 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             letterSpacing: 0.2,
           ),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 20),
+        _buildHeroSearchBar(),
+        const SizedBox(height: 20),
         _buildPrimaryCTA(),
+        const SizedBox(height: 14),
+        _buildHeroStatsRow(),
       ],
     );
   }
 
+  Widget _buildHeroSearchBar() {
+    return Focus(
+      onFocusChange: (hasFocus) {
+        if (_isSearchFocused == hasFocus) return;
+        setState(() => _isSearchFocused = hasFocus);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        constraints: const BoxConstraints(maxWidth: 450),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+        decoration: BoxDecoration(
+          color: _isSearchFocused
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _isSearchFocused
+                ? goldYellow.withValues(alpha: 0.5)
+                : Colors.white.withValues(alpha: 0.13),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.search_rounded,
+              color: Colors.white.withValues(alpha: 0.6),
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _searchQuery = value),
+                style: const TextStyle(color: Colors.white),
+                cursorColor: goldYellow,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: 'Search pizzas, burgers, snacks...',
+                  hintStyle: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            if (_searchQuery.trim().isNotEmpty)
+              IconButton(
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
+                splashRadius: 16,
+                tooltip: 'Clear search',
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroStatsRow() {
+    const stats = <Map<String, String>>[
+      {'value': '500+', 'label': 'Happy Orders'},
+      {'value': '4.8', 'label': 'Avg Rating'},
+      {'value': '30m', 'label': 'Avg Delivery'},
+    ];
+
+    return Wrap(
+      spacing: 24,
+      runSpacing: 10,
+      children: stats
+          .map((stat) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  stat['value']!,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: goldYellow,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  stat['label']!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+
+  Widget _buildHeroMediaPanel({bool compact = false}) {
+    final filtered = _getFilteredHomeItems();
+    final spotlight = filtered.isNotEmpty
+        ? filtered.first
+        : (List.of(
+            papichuloMenu,
+          )..sort((a, b) => b.rating.compareTo(a.rating))).first;
+
+    final imageUrl = spotlight.imageUrl;
+    return Container(
+      height: compact ? 220 : 350,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: goldYellow.withValues(alpha: 0.2)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: imageUrl != null
+                ? Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.low,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const ColoredBox(
+                          color: Color(0xFF121212),
+                          child: Center(
+                            child: Icon(
+                              Icons.fastfood,
+                              color: Colors.grey,
+                              size: 48,
+                            ),
+                          ),
+                        ),
+                  )
+                : const ColoredBox(
+                    color: Color(0xFF121212),
+                    child: Center(
+                      child: Icon(Icons.fastfood, color: Colors.grey, size: 48),
+                    ),
+                  ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.48),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            top: 14,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: goldYellow.withValues(alpha: 0.35)),
+              ),
+              child: Text(
+                'TODAY SPECIAL',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: goldYellow,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 200),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.62),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: goldYellow.withValues(alpha: 0.25)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    spotlight.name,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '20% off on selected picks',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: goldYellow),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<dynamic> _getFilteredHomeItems() {
+    final query = _searchQuery.trim().toLowerCase();
+    return papichuloMenu.where((item) {
+      final matchesCategory =
+          _selectedCategory == 'All' || item.category == _selectedCategory;
+      if (!matchesCategory) return false;
+      if (query.isEmpty) return true;
+
+      final searchable =
+          '${item.name} ${item.category} ${item.ingredients.join(' ')}'
+              .toLowerCase();
+      return searchable.contains(query);
+    }).toList();
+  }
+
   Widget _buildPrimaryCTA() {
     return _PrimaryCTAWidget(onTap: () => context.push('/menu'));
+  }
+
+  String _selectedCategoryLabelForSubtitle() {
+    if (_selectedCategory == 'All') return 'all categories';
+    return _selectedCategory.toUpperCase();
+  }
+
+  String? _badgeForItem(dynamic item) {
+    if (item.rating >= 4.7) return 'Bestseller';
+    if (item.name.toLowerCase().contains('spicy')) return 'Spicy';
+    if (item.rating >= 4.5) return 'New';
+    return null;
+  }
+
+  Widget _buildFoodBadge(String badge) {
+    Color color = goldYellow;
+    if (badge == 'Spicy') color = const Color(0xFFEF4444);
+    if (badge == 'New') color = const Color(0xFF22C55E);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.42)),
+      ),
+      child: Text(
+        badge,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
   }
 
   Widget _buildCategoryNav() {
@@ -724,9 +1024,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.03),
+          color: Colors.white.withValues(alpha: 0.03),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -734,6 +1034,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: Row(
             children: _categories.map((category) {
               final isActive = _selectedCategory == category;
+              final icon = _categoryIcons[category] ?? Icons.fastfood_outlined;
               return Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: GestureDetector(
@@ -743,29 +1044,50 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 10,
+                        horizontal: 16,
+                        vertical: 9,
                       ),
                       decoration: BoxDecoration(
-                        color: isActive ? goldYellow : Colors.transparent,
+                        gradient: isActive
+                            ? const LinearGradient(
+                                colors: [Color(0xFFFFE168), Color(0xFFFFD700)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                            : null,
+                        color: isActive ? null : Colors.transparent,
                         border: Border.all(
                           color: isActive
                               ? goldYellow
-                              : Colors.white.withOpacity(0.25),
+                              : Colors.white.withValues(alpha: 0.25),
                           width: 1.2,
                         ),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                       ),
-                      child: Text(
-                        category,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: isActive
-                              ? Colors.black
-                              : Colors.white.withOpacity(0.9),
-                          fontWeight: isActive
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            icon,
+                            size: 16,
+                            color: isActive
+                                ? Colors.black
+                                : Colors.white.withValues(alpha: 0.75),
+                          ),
+                          const SizedBox(width: 7),
+                          Text(
+                            category,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: isActive
+                                      ? Colors.black
+                                      : Colors.white.withValues(alpha: 0.9),
+                                  fontWeight: isActive
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -779,35 +1101,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildAnimatedFeaturedItems() {
-    final filteredItems = papichuloMenu
-        .where((item) => item.category == _selectedCategory)
-        .take(4)
-        .toList();
+    final filteredItems = _getFilteredHomeItems();
+    final visibleItems = filteredItems.take(6).toList();
+    final hasSearch = _searchQuery.trim().isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
       child: Column(
         children: [
           Text(
-            'Popular Right Now',
+            hasSearch
+                ? 'Results for "${_searchQuery.trim()}"'
+                : 'Popular Right Now',
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w900,
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
           Text(
-            'Top picks from ${_selectedCategory.toUpperCase()}',
+            'Top picks from ${_selectedCategoryLabelForSubtitle()} | ${filteredItems.length} items',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.white.withOpacity(0.62),
+              color: Colors.white.withValues(alpha: 0.62),
             ),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 28),
-          if (filteredItems.isEmpty)
+          if (visibleItems.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 40),
               child: Text(
-                'No items in this category',
+                hasSearch
+                    ? 'No items found for "${_searchQuery.trim()}"'
+                    : 'No items in this category',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyLarge?.copyWith(color: Colors.grey[400]),
@@ -818,12 +1145,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               builder: (context, constraints) {
                 if (constraints.maxWidth > 1180) {
                   return Row(
-                    children: List.generate(filteredItems.length, (index) {
+                    children: List.generate(visibleItems.length, (index) {
                       return Expanded(
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: _buildPremiumFoodCard(
-                            filteredItems[index],
+                            visibleItems[index],
                             index,
                           ),
                         ),
@@ -834,12 +1161,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 return Wrap(
                   spacing: 16,
                   runSpacing: 16,
-                  children: List.generate(filteredItems.length, (index) {
+                  children: List.generate(visibleItems.length, (index) {
                     return SizedBox(
                       width: constraints.maxWidth > 760
                           ? (constraints.maxWidth - 16) / 2
                           : constraints.maxWidth,
-                      child: _buildPremiumFoodCard(filteredItems[index], index),
+                      child: _buildPremiumFoodCard(visibleItems[index], index),
                     );
                   }),
                 );
@@ -852,6 +1179,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildPremiumFoodCard(dynamic item, int index) {
     final isHovered = _hoveredCards[index] ?? false;
+    final badge = _badgeForItem(item);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -891,35 +1219,62 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                       color: Colors.black,
                     ),
-                    child: item.imageUrl != null
-                        ? ClipRRect(
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(16),
-                            ),
-                            child: Image.network(
-                              item.imageUrl!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              cacheHeight: 160,
-                              cacheWidth: 300,
-                              filterQuality: FilterQuality.low,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Center(
-                                    child: Icon(
-                                      Icons.fastfood,
-                                      size: 50,
-                                      color: Colors.grey,
-                                    ),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: item.imageUrl != null
+                              ? ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(16),
                                   ),
-                            ),
-                          )
-                        : const Center(
-                            child: Icon(
-                              Icons.fastfood,
-                              size: 50,
-                              color: Colors.grey,
+                                  child: Image.network(
+                                    item.imageUrl!,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    cacheHeight: 160,
+                                    cacheWidth: 300,
+                                    filterQuality: FilterQuality.low,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            const Center(
+                                              child: Icon(
+                                                Icons.fastfood,
+                                                size: 50,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                  ),
+                                )
+                              : const Center(
+                                  child: Icon(
+                                    Icons.fastfood,
+                                    size: 50,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                        ),
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.5),
+                                  Colors.transparent,
+                                ],
+                              ),
                             ),
                           ),
+                        ),
+                        if (badge != null)
+                          Positioned(
+                            top: 10,
+                            left: 10,
+                            child: _buildFoodBadge(badge),
+                          ),
+                      ],
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(16),

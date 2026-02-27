@@ -10,6 +10,7 @@ import '../screens/auth/phone_login_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/menu/menu_screen.dart';
 import '../screens/orders/user_orders_screen.dart';
+import '../screens/profile/profile_screen.dart';
 import '../screens/splash/splash_screen.dart';
 import '../services/auth_service.dart';
 
@@ -68,6 +69,10 @@ class AppRouter {
       GoRoute(
         path: '/orders',
         builder: (context, state) => const UserOrdersScreen(),
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) => const ProfileScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) {
