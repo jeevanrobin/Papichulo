@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -23,6 +24,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
     6,
     (_) => FocusNode(),
   );
+  final FocusNode _keyboardListenerFocus = FocusNode();
   String? _errorText;
   bool _verifying = false;
   Timer? _resendTimer;
@@ -43,6 +45,7 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
     for (final node in _focusNodes) {
       node.dispose();
     }
+    _keyboardListenerFocus.dispose();
     super.dispose();
   }
 
@@ -73,6 +76,8 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
     }
     if (usable.length == 6) {
       _focusNodes.last.unfocus();
+      // Auto-submit after paste fills all 6 digits
+      Future.microtask(_verify);
     } else if (usable.isNotEmpty) {
       final nextIndex = usable.length < 6 ? usable.length : 5;
       _focusNodes[nextIndex].requestFocus();
@@ -144,6 +149,10 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
     } else if (value.isEmpty && index > 0) {
       _focusNodes[index - 1].requestFocus();
     }
+    // Auto-submit when last digit is filled
+    if (value.isNotEmpty && index == _focusNodes.length - 1 && _otp.length == 6) {
+      Future.microtask(_verify);
+    }
   }
 
   @override
@@ -155,7 +164,17 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
         foregroundColor: goldYellow,
         title: const Text('Verify OTP'),
       ),
-      body: Center(
+      body: KeyboardListener(
+        focusNode: _keyboardListenerFocus,
+        autofocus: true,
+        onKeyEvent: (event) {
+          if (event is KeyDownEvent &&
+              (event.logicalKey == LogicalKeyboardKey.enter ||
+                  event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+            _verify();
+          }
+        },
+        child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: Container(
@@ -215,7 +234,11 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
+                        textInputAction: index < 5
+                            ? TextInputAction.next
+                            : TextInputAction.done,
                         onChanged: (value) => _onDigitChanged(index, value),
+                        onSubmitted: (_) => _verify(),
                       ),
                     );
                   }),
@@ -271,7 +294,8 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
             ),
           ),
         ),
-      ),
+        ), // KeyboardListener child close
+      ), // KeyboardListener close
     );
   }
 }

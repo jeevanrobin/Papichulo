@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/menu_data.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/fly_to_cart_button.dart';
 import '../../widgets/animated_cart_icon.dart';
 import '../../services/analytics_service.dart';
@@ -40,6 +41,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isHeaderLocationLoading = false;
   static const String _guestDisplayName = 'Guest';
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  bool _showScrollTop = false;
   String _searchQuery = '';
   bool _isSearchFocused = false;
 
@@ -95,6 +98,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     _startAnimations();
     _detectHeaderLocation();
+    _scrollController.addListener(() {
+      final show = _scrollController.offset > 300;
+      if (show != _showScrollTop) setState(() => _showScrollTop = show);
+    });
   }
 
   void _startAnimations() async {
@@ -156,6 +163,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _heroController.dispose();
     _cardController.dispose();
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -180,6 +188,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   _buildAnimatedHeader(),
                   Expanded(
                     child: SingleChildScrollView(
+                      controller: _scrollController,
                       physics: const ClampingScrollPhysics(),
                       child: Column(
                         children: [
@@ -247,6 +256,49 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               );
             },
+          ),
+          // Scroll-to-top FAB
+          Positioned(
+            bottom: 24,
+            right: 24,
+            child: AnimatedOpacity(
+              opacity: _showScrollTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: IgnorePointer(
+                ignoring: !_showScrollTop,
+                child: GestureDetector(
+                  onTap: () => _scrollController.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                  ),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFF5C842), Color(0xFFC8900A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFF5C842).withOpacity(0.45),
+                          blurRadius: 14,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      color: Colors.black,
+                      size: 26,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -357,6 +409,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               () => _showAuthDialog(),
                             ),
                             const SizedBox(width: 20),
+                            _buildThemeToggle(),
+                            const SizedBox(width: 12),
                             _buildAnimatedCartIcon(),
                           ] else if (auth.isAdmin) ...[
                             _buildAnimatedNavItem(
@@ -383,6 +437,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               );
                             }),
                             const SizedBox(width: 20),
+                            _buildThemeToggle(),
+                            const SizedBox(width: 12),
                             _buildAnimatedCartIcon(),
                             const SizedBox(width: 20),
                             _buildHeaderCTA(),
@@ -399,6 +455,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             const SizedBox(width: 20),
                             _buildUserProfileMenu(),
                             const SizedBox(width: 20),
+                            _buildThemeToggle(),
+                            const SizedBox(width: 12),
                             _buildAnimatedCartIcon(),
                           ],
                         ],
@@ -438,6 +496,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return AnimatedCartIcon(
       key: _cartIconKey,
       onCartTap: () => context.read<CartProvider>().openCart(),
+    );
+  }
+
+  Widget _buildThemeToggle() {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, _) {
+        return GestureDetector(
+          onTap: () => themeProvider.toggle(),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            transitionBuilder: (child, animation) => RotationTransition(
+              turns: animation,
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: Icon(
+              themeProvider.isDark
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+              key: ValueKey(themeProvider.isDark),
+              color: goldYellow,
+              size: 22,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1302,6 +1385,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   const SizedBox(height: 6),
                                   Row(
                                     children: [
+                                      // Veg / Non-veg dot
+                                      Builder(builder: (ctx) {
+                                        final isVeg = (item.type as String).toLowerCase().contains('veg') && !(item.type as String).toLowerCase().contains('non');
+                                        return Container(
+                                          width: 10,
+                                          height: 10,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: isVeg ? const Color(0xFF34C759) : const Color(0xFFEF4444),
+                                          ),
+                                        );
+                                      }),
+                                      const SizedBox(width: 6),
                                       Icon(
                                         Icons.star,
                                         size: 14,

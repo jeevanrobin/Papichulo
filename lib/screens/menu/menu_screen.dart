@@ -9,6 +9,7 @@ import '../../data/menu_data.dart';
 import '../../models/food_item.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/analytics_service.dart';
+import '../../services/favourites_service.dart';
 import '../../services/order_api_service.dart';
 import '../../widgets/animated_cart_icon.dart';
 import '../cart/cart_drawer.dart';
@@ -1458,9 +1459,42 @@ class _MenuItemState extends State<_MenuItem> with TickerProviderStateMixin {
   void _onAddTap() {
     final firstAdd = _quantity <= 0;
     _increment();
-    if (!firstAdd) return;
-    setState(() => _showBurst = true);
-    _burstController.forward(from: 0);
+    if (firstAdd) {
+      setState(() => _showBurst = true);
+      _burstController.forward(from: 0);
+      // Show toast notification
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Text('🛒', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${widget.item.name} added to cart',
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFF5C842),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            duration: const Duration(seconds: 2),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildCartControl() {
@@ -1719,6 +1753,40 @@ class _MenuItemState extends State<_MenuItem> with TickerProviderStateMixin {
                         ),
                       ),
                       if (_isPopular) _buildPopularBadge(),
+                      // Favourite heart toggle
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: GestureDetector(
+                          onTap: () {
+                            FavouritesService.instance.toggle(widget.item.name);
+                          },
+                          child: ListenableBuilder(
+                            listenable: FavouritesService.instance,
+                            builder: (context, _) {
+                              final isFav = FavouritesService.instance
+                                  .isFavourite(widget.item.name);
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  isFav
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isFav
+                                      ? const Color(0xFFFF4D67)
+                                      : Colors.white70,
+                                  size: 18,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
