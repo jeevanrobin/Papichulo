@@ -645,6 +645,66 @@ app.post('/api/auth/verify-otp', validateBody(otpVerifySchema), asyncHandler(asy
   });
 }));
 
+app.post('/api/auth/firebase-login', asyncHandler(async (req, res) => {
+  const phone = normalizePhone(req.body.phone);
+  const firebaseIdToken = String(req.body.firebaseIdToken || '').trim();
+
+  if (!/^[0-9]{10}$/.test(phone)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Phone must be 10 digits.');
+  }
+  if (!firebaseIdToken) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Firebase ID token is required.');
+  }
+
+  // Verify the Firebase ID token using Google's public keys
+  let decoded;
+  try {
+    // Fetch Google's public keys for Firebase
+    const keysResponse = await fetch(
+      'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
+    );
+    if (!keysResponse.ok) {
+      throw new Error('Failed to fetch Google public keys');
+    }
+    const publicKeys = await keysResponse.json();
+
+    // Decode header to find the right key
+    const headerB64 = firebaseIdToken.split('.')[0];
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+    const publicKey = publicKeys[header.kid];
+    if (!publicKey) {
+      throw new Error('No matching public key found');
+    }
+
+    // Verify with the correct public key
+    decoded = jwt.verify(firebaseIdToken, publicKey, {
+      algorithms: ['RS256'],
+      audience: 'papichulo-7346',
+      issuer: 'https://securetoken.google.com/papichulo-7346',
+    });
+  } catch (err) {
+    throw new ApiError(401, 'INVALID_FIREBASE_TOKEN', `Firebase token verification failed: ${err.message}`);
+  }
+
+  // Find or create user by phone
+  let user = await prisma.user.findFirst({ where: { phone } });
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        name: `User ${phone.slice(-4)}`,
+        phone,
+        role: 'customer',
+      },
+    });
+  }
+
+  const token = signUserToken(user);
+  res.json({
+    token,
+    user: toUserResponse(user),
+  });
+}));
+
 app.post('/api/signup', validateBody(signupSchema), asyncHandler(async (req, res) => {
   const { name, email, phone, password } = req.body;
   const normalizedEmail = email.toLowerCase();

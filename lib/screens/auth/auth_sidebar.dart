@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +8,7 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 
 /// A Swiggy-style sliding right-aligned sidebar that handles both
-/// phone-number entry and OTP verification in a single overlay.
+/// phone-number entry and OTP verification using **Firebase Phone Auth**.
 class AuthSidebar extends StatefulWidget {
   const AuthSidebar({super.key});
 
@@ -32,7 +33,9 @@ class _AuthSidebarState extends State<AuthSidebar>
   final TextEditingController _phoneCtrl = TextEditingController();
   bool _sendingOtp = false;
   String? _phoneError;
-  String? _debugOtp;
+
+  // Firebase
+  fb.ConfirmationResult? _confirmationResult;
 
   // OTP step
   final List<TextEditingController> _otpCtrls =
@@ -87,13 +90,13 @@ class _AuthSidebarState extends State<AuthSidebar>
     setState(() {
       _sendingOtp = true;
       _phoneError = null;
-      _debugOtp = null;
     });
     try {
-      final res =
-          await context.read<AuthService>().sendOtp(phone: digits);
+      final result = await fb.FirebaseAuth.instance.signInWithPhoneNumber(
+        '+91$digits',
+      );
       if (!mounted) return;
-      _debugOtp = res['debugOtp']?.toString();
+      _confirmationResult = result;
       setState(() => _step = 1);
       _startResendTimer();
     } catch (e) {
@@ -129,8 +132,11 @@ class _AuthSidebarState extends State<AuthSidebar>
     if (_resendCooldown > 0) return;
     final digits = _phoneCtrl.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
     try {
-      await context.read<AuthService>().sendOtp(phone: digits);
+      final result = await fb.FirebaseAuth.instance.signInWithPhoneNumber(
+        '+91$digits',
+      );
       if (!mounted) return;
+      _confirmationResult = result;
       _startResendTimer();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -174,7 +180,7 @@ class _AuthSidebarState extends State<AuthSidebar>
   }
 
   Future<void> _verifyOtp() async {
-    if (_verifying) return;
+    if (_verifying || _confirmationResult == null) return;
     if (_otp.length != 6) {
       setState(() => _otpError = 'Enter complete 6-digit OTP');
       return;
@@ -184,8 +190,22 @@ class _AuthSidebarState extends State<AuthSidebar>
       _otpError = null;
     });
     try {
+      // Firebase confirms the OTP
+      final userCredential = await _confirmationResult!.confirm(_otp);
+      final firebaseUser = userCredential.user;
+      if (firebaseUser == null) throw Exception('Firebase auth failed');
+
+      // Get the Firebase ID token
+      final idToken = await firebaseUser.getIdToken();
+      if (idToken == null) throw Exception('Cannot get Firebase token');
+
+      // Send to our backend to create/find user and get JWT
       final digits = _phoneCtrl.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
-      await context.read<AuthService>().verifyOtp(phone: digits, otp: _otp);
+      if (!mounted) return;
+      await context.read<AuthService>().firebaseLogin(
+            phone: digits,
+            firebaseIdToken: idToken,
+          );
       if (!mounted) return;
       await _close();
     } catch (e) {
@@ -212,9 +232,9 @@ class _AuthSidebarState extends State<AuthSidebar>
             child: SlideTransition(
               position: _slideAnim,
               child: Container(
-                width: 420,
+                width: 520,
                 constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.9,
+                  maxWidth: MediaQuery.of(context).size.width * 0.92,
                 ),
                 height: double.infinity,
                 decoration: const BoxDecoration(
@@ -234,7 +254,7 @@ class _AuthSidebarState extends State<AuthSidebar>
                       Expanded(
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 28, vertical: 16),
+                              horizontal: 36, vertical: 20),
                           child:
                               _step == 0 ? _buildPhoneStep() : _buildOtpStep(),
                         ),
@@ -268,7 +288,7 @@ class _AuthSidebarState extends State<AuthSidebar>
               _step == 0 ? 'Login' : 'Verify OTP',
               style: const TextStyle(
                 color: _gold,
-                fontSize: 22,
+                fontSize: 24,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0.5,
               ),
@@ -292,8 +312,8 @@ class _AuthSidebarState extends State<AuthSidebar>
         // Illustration area
         Center(
           child: Container(
-            width: 100,
-            height: 100,
+            width: 120,
+            height: 120,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
@@ -305,7 +325,7 @@ class _AuthSidebarState extends State<AuthSidebar>
                 ],
               ),
             ),
-            child: const Icon(Icons.phone_android, color: _gold, size: 48),
+            child: const Icon(Icons.phone_android, color: _gold, size: 56),
           ),
         ),
         const SizedBox(height: 28),
@@ -313,15 +333,15 @@ class _AuthSidebarState extends State<AuthSidebar>
           'Enter your\nmobile number',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 26,
+            fontSize: 32,
             fontWeight: FontWeight.w800,
             height: 1.2,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'We\'ll send a 6-digit OTP for secure login.',
-          style: TextStyle(color: Colors.grey[400], fontSize: 14),
+          'We\'ll send a 6-digit OTP via Firebase for secure login.',
+          style: TextStyle(color: Colors.grey[400], fontSize: 15),
         ),
         const SizedBox(height: 28),
         // Phone field
@@ -335,7 +355,7 @@ class _AuthSidebarState extends State<AuthSidebar>
             children: [
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
                 decoration: BoxDecoration(
                   border: Border(
                     right: BorderSide(color: _gold.withValues(alpha: 0.15)),
@@ -346,7 +366,7 @@ class _AuthSidebarState extends State<AuthSidebar>
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
-                    fontSize: 16,
+                    fontSize: 18,
                   ),
                 ),
               ),
@@ -362,16 +382,16 @@ class _AuthSidebarState extends State<AuthSidebar>
                   ],
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
-                    letterSpacing: 1.5,
+                    letterSpacing: 2.0,
                   ),
                   decoration: const InputDecoration(
                     counterText: '',
                     hintText: 'Mobile number',
-                    hintStyle: TextStyle(color: Colors.white24),
+                    hintStyle: TextStyle(color: Colors.white24, fontSize: 16),
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                        EdgeInsets.symmetric(horizontal: 18, vertical: 20),
                     border: InputBorder.none,
                   ),
                   onSubmitted: (_) => _sendOtp(),
@@ -385,17 +405,11 @@ class _AuthSidebarState extends State<AuthSidebar>
           Text(_phoneError!,
               style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
         ],
-        if (_debugOtp != null) ...[
-          const SizedBox(height: 8),
-          Text('Dev OTP: $_debugOtp',
-              style:
-                  const TextStyle(color: Colors.greenAccent, fontSize: 12)),
-        ],
         const SizedBox(height: 24),
         // CTA button
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 56,
           child: ElevatedButton(
             onPressed: _sendingOtp ? null : _sendOtp,
             style: ElevatedButton.styleFrom(
@@ -415,7 +429,7 @@ class _AuthSidebarState extends State<AuthSidebar>
                 : const Text(
                     'CONTINUE',
                     style:
-                        TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
                   ),
           ),
         ),
@@ -425,7 +439,7 @@ class _AuthSidebarState extends State<AuthSidebar>
           child: Text(
             'By continuing, you agree to our Terms & Privacy Policy',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[600], fontSize: 11),
+            style: TextStyle(color: Colors.grey[600], fontSize: 12),
           ),
         ),
       ],
@@ -458,14 +472,14 @@ class _AuthSidebarState extends State<AuthSidebar>
           'Enter OTP',
           style: TextStyle(
             color: Colors.white,
-            fontSize: 26,
+            fontSize: 32,
             fontWeight: FontWeight.w800,
           ),
         ),
         const SizedBox(height: 8),
         RichText(
           text: TextSpan(
-            style: TextStyle(color: Colors.grey[400], fontSize: 14),
+            style: TextStyle(color: Colors.grey[400], fontSize: 15),
             children: [
               const TextSpan(text: 'OTP sent to '),
               TextSpan(
@@ -476,19 +490,13 @@ class _AuthSidebarState extends State<AuthSidebar>
             ],
           ),
         ),
-        if (_debugOtp != null) ...[
-          const SizedBox(height: 6),
-          Text('Dev OTP: $_debugOtp',
-              style:
-                  const TextStyle(color: Colors.greenAccent, fontSize: 12)),
-        ],
         const SizedBox(height: 28),
         // OTP boxes
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: List.generate(6, (i) {
             return SizedBox(
-              width: 48,
+              width: 52,
               child: TextField(
                 controller: _otpCtrls[i],
                 focusNode: _otpFocusNodes[i],
@@ -530,7 +538,7 @@ class _AuthSidebarState extends State<AuthSidebar>
         // Verify button
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 56,
           child: ElevatedButton(
             onPressed: _verifying ? null : _verifyOtp,
             style: ElevatedButton.styleFrom(
@@ -550,7 +558,7 @@ class _AuthSidebarState extends State<AuthSidebar>
                 : const Text(
                     'VERIFY OTP',
                     style:
-                        TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
                   ),
           ),
         ),

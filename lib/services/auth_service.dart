@@ -165,6 +165,27 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Firebase Phone Auth flow: after Firebase verifies the OTP, call backend
+  /// with the Firebase ID token so it can create/find the user and issue a JWT.
+  Future<void> firebaseLogin({
+    required String phone,
+    required String firebaseIdToken,
+  }) async {
+    final normalizedPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    _loading = true;
+    notifyListeners();
+    try {
+      final response = await _postWithFallback('/auth/firebase-login', {
+        'phone': normalizedPhone,
+        'firebaseIdToken': firebaseIdToken,
+      });
+      await _setSessionFromResponse(response.body);
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> login({required String email, required String password}) async {
     _loading = true;
     notifyListeners();

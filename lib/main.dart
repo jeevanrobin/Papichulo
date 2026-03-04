@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/theme.dart';
+import 'firebase_options.dart';
 import 'providers/cart_provider.dart';
 import 'providers/theme_provider.dart';
 import 'router/app_router.dart';
@@ -14,15 +16,18 @@ import 'services/favourites_service.dart';
 import 'widgets/error_boundary_screen.dart';
 import 'widgets/offline_banner.dart';
 
-void main() {
+void main() async {
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
     debugPrint('FlutterError: ${details.exception}');
   };
 
   runZonedGuarded(
-    () {
+    () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
       FavouritesService.instance.load();
       AddressService.instance.loadAddresses();
       runApp(const PapichuloApp());
