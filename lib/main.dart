@@ -8,6 +8,7 @@ import 'providers/cart_provider.dart';
 import 'providers/theme_provider.dart';
 import 'router/app_router.dart';
 import 'services/auth_service.dart';
+import 'services/address_service.dart';
 import 'services/cart_service.dart';
 import 'services/favourites_service.dart';
 import 'widgets/error_boundary_screen.dart';
@@ -23,6 +24,7 @@ void main() {
     () {
       WidgetsFlutterBinding.ensureInitialized();
       FavouritesService.instance.load();
+      AddressService.instance.loadAddresses();
       runApp(const PapichuloApp());
     },
     (error, stack) {

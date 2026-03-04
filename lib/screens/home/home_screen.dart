@@ -13,6 +13,7 @@ import '../../services/auth_service.dart';
 import '../../services/order_api_service.dart';
 import '../../services/order_alert_service.dart';
 import '../cart/cart_drawer.dart';
+import '../auth/auth_sidebar.dart';
 import '../../providers/cart_provider.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -593,7 +594,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     bool startWithSignup = false,
     bool adminRequired = false,
   }) async {
-    context.push('/auth/phone');
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (_) => const AuthSidebar(),
+    );
     if (adminRequired && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

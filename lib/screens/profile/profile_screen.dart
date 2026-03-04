@@ -3,9 +3,13 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/order_record.dart';
+import '../../models/saved_address.dart';
 import '../../providers/cart_provider.dart';
+import '../../services/address_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_api_service.dart';
+import '../auth/auth_sidebar.dart';
+import '../home/set_delivery_location_dialog.dart';
 
 enum _ProfileTab { orders, favourites, payments, addresses, settings }
 
@@ -229,7 +233,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () => context.go('/auth/phone'),
+                onPressed: () {
+                  showDialog<void>(
+                    context: context,
+                    barrierColor: Colors.transparent,
+                    builder: (_) => const AuthSidebar(),
+                  );
+                },
                 style: FilledButton.styleFrom(
                   backgroundColor: _gold,
                   foregroundColor: Colors.black,
@@ -438,11 +448,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           subtitle: 'Saved payment methods will appear here.',
         );
       case _ProfileTab.addresses:
-        return _buildPlaceholder(
-          icon: Icons.location_on_outlined,
-          title: 'Addresses',
-          subtitle: 'Manage delivery addresses in this section.',
-        );
+        return _buildAddressesContent();
       case _ProfileTab.settings:
         return _buildPlaceholder(
           icon: Icons.settings_outlined,
@@ -566,6 +572,144 @@ class _ProfileScreenState extends State<ProfileScreen> {
         },
       ),
     );
+  }
+
+  Widget _buildAddressesContent() {
+    return ListenableBuilder(
+      listenable: AddressService.instance,
+      builder: (context, _) {
+        final addresses = AddressService.instance.addresses;
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'Saved Addresses',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: _addNewAddress,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add New'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _gold,
+                      foregroundColor: Colors.black,
+                      textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (addresses.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF181818),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _border),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(Icons.location_off_outlined,
+                          color: _gold.withValues(alpha: 0.5), size: 40),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No saved addresses yet.',
+                        style: TextStyle(color: Colors.grey[400]),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Add a delivery address from the home screen or tap "Add New" above.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: addresses.map((addr) {
+                    return _AddressCard(
+                      address: addr,
+                      onEdit: () => _editAddress(addr),
+                      onDelete: () => _deleteAddress(addr),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _addNewAddress() {
+    showDialog<DeliveryLocationResult>(
+      context: context,
+      builder: (_) => const SetDeliveryLocationDialog(
+        latitude: 0,
+        longitude: 0,
+        resolvedAddress: 'Enter your delivery address',
+      ),
+    );
+  }
+
+  void _editAddress(SavedAddress addr) {
+    showDialog<DeliveryLocationResult>(
+      context: context,
+      builder: (_) => SetDeliveryLocationDialog(
+        latitude: addr.latitude,
+        longitude: addr.longitude,
+        resolvedAddress: addr.address,
+        existingAddress: addr,
+      ),
+    );
+  }
+
+  void _deleteAddress(SavedAddress addr) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F1F),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Delete Address',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Remove "${addr.label}" address?',
+          style: TextStyle(color: Colors.grey[300]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      AddressService.instance.deleteAddress(addr.id);
+    }
   }
 
   Widget _buildPlaceholder({
@@ -1075,5 +1219,97 @@ class _OrderCard extends StatelessWidget {
       TimeOfDay.fromDateTime(dateTime),
     );
     return '$date, $time';
+  }
+}
+
+class _AddressCard extends StatelessWidget {
+  static const Color _gold = Color(0xFFF5C842);
+  static const Color _border = Color(0x1AFFFFFF);
+
+  final SavedAddress address;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _AddressCard({
+    required this.address,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  IconData get _labelIcon {
+    switch (address.label.toLowerCase()) {
+      case 'home':
+        return Icons.home_outlined;
+      case 'work':
+        return Icons.work_outline;
+      default:
+        return Icons.location_on_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 320,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF181818),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row: icon + label + actions
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(_labelIcon, color: _gold, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  address.label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: onEdit,
+                icon: Icon(Icons.edit_outlined,
+                    color: _gold.withValues(alpha: 0.7), size: 18),
+                tooltip: 'Edit',
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(6),
+              ),
+              IconButton(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline,
+                    color: Colors.redAccent, size: 18),
+                tooltip: 'Delete',
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(6),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Address text
+          Text(
+            address.fullAddress,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.grey[400], fontSize: 13, height: 1.4),
+          ),
+        ],
+      ),
+    );
   }
 }
