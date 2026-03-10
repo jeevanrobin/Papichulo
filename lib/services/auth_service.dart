@@ -1,8 +1,8 @@
 import 'dart:convert';
-
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 
+import 'api_client.dart';
 import 'api_config.dart';
 import 'local_auth_storage.dart';
 
@@ -52,7 +52,7 @@ class AuthService extends ChangeNotifier {
   factory AuthService() => instance;
 
   final LocalAuthStorage _storage = LocalAuthStorage();
-  final http.Client _client = http.Client();
+  final ApiClient _api = ApiClient();
 
   String? _token;
   AuthUser? _user;
@@ -65,7 +65,10 @@ class AuthService extends ChangeNotifier {
   bool get isAuthenticated => _token != null && _user != null;
   bool get isAdmin => (_user?.role.toLowerCase() ?? '') == 'admin';
 
-  List<String> get _baseUrls => ApiConfig.candidateBaseUrls();
+  Map<String, String> _authHeaders() {
+    if (_token == null || _token!.isEmpty) return const {};
+    return {'Authorization': 'Bearer $_token'};
+  }
 
   Future<void> bootstrap() async {
     if (_bootstrapped) return;
@@ -93,9 +96,9 @@ class AuthService extends ChangeNotifier {
   Future<void> refreshMe({bool silent = false}) async {
     if (_token == null) return;
     try {
-      final response = await _getWithFallback(
+      final response = await _api.get(
         '/me',
-        headers: {'Authorization': 'Bearer $_token'},
+        headers: _authHeaders(),
       );
       final decoded = jsonDecode(response.body);
       if (decoded is! Map<String, dynamic>) throw Exception('Invalid /me');
@@ -117,7 +120,7 @@ class AuthService extends ChangeNotifier {
     _loading = true;
     notifyListeners();
     try {
-      final response = await _postWithFallback('/signup', {
+      final response = await _api.post('/signup', {
         'name': name,
         'email': email,
         'phone': phone,
@@ -135,7 +138,7 @@ class AuthService extends ChangeNotifier {
     if (normalized.length != 10) {
       throw Exception('Enter a valid 10-digit mobile number');
     }
-    final response = await _postWithFallback('/auth/send-otp', {
+    final response = await _api.post('/auth/send-otp', {
       'phone': normalized,
     });
     final decoded = jsonDecode(response.body);
@@ -154,7 +157,7 @@ class AuthService extends ChangeNotifier {
     _loading = true;
     notifyListeners();
     try {
-      final response = await _postWithFallback('/auth/verify-otp', {
+      final response = await _api.post('/auth/verify-otp', {
         'phone': normalizedPhone,
         'otp': normalizedOtp,
       });
@@ -175,7 +178,7 @@ class AuthService extends ChangeNotifier {
     _loading = true;
     notifyListeners();
     try {
-      final response = await _postWithFallback('/auth/firebase-login', {
+      final response = await _api.post('/auth/firebase-login', {
         'phone': normalizedPhone,
         'firebaseIdToken': firebaseIdToken,
       });
@@ -190,7 +193,7 @@ class AuthService extends ChangeNotifier {
     _loading = true;
     notifyListeners();
     try {
-      final response = await _postWithFallback('/login', {
+      final response = await _api.post('/login', {
         'email': email,
         'password': password,
       });
@@ -209,13 +212,13 @@ class AuthService extends ChangeNotifier {
     final normalizedName = name.trim();
     final normalizedEmail = (email ?? '').trim();
 
-    final response = await _patchWithFallback(
+    final response = await _api.patch(
       '/me',
       {
         'name': normalizedName,
         'email': normalizedEmail.isEmpty ? null : normalizedEmail,
       },
-      headers: {'Authorization': 'Bearer $_token'},
+      headers: _authHeaders(),
     );
 
     final decoded = jsonDecode(response.body);
@@ -254,122 +257,5 @@ class AuthService extends ChangeNotifier {
     if (_token == null || _user == null) return;
     final payload = jsonEncode({'token': _token, 'user': _user!.toJson()});
     await _storage.saveAuth(payload);
-  }
-
-  Future<http.Response> _getWithFallback(
-    String path, {
-    Map<String, String>? headers,
-  }) async {
-    Exception? httpError;
-    Exception? lastNetworkError;
-    var hadNetworkError = false;
-    var hadHttpResponse = false;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.get(
-          Uri.parse('$baseUrl$path'),
-          headers: headers,
-        );
-        hadHttpResponse = true;
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        httpError ??= Exception(_extractError(response, baseUrl, path));
-      } catch (error) {
-        hadNetworkError = true;
-        lastNetworkError = Exception(error.toString());
-      }
-    }
-    if (hadHttpResponse && httpError != null) {
-      throw httpError;
-    }
-    if (hadNetworkError && !hadHttpResponse) {
-      throw Exception(
-        'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
-      );
-    }
-    throw lastNetworkError ?? Exception('Request failed ($path)');
-  }
-
-  Future<http.Response> _postWithFallback(String path, Object payload) async {
-    Exception? httpError;
-    Exception? lastNetworkError;
-    var hadNetworkError = false;
-    var hadHttpResponse = false;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.post(
-          Uri.parse('$baseUrl$path'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(payload),
-        );
-        hadHttpResponse = true;
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        httpError ??= Exception(_extractError(response, baseUrl, path));
-      } catch (error) {
-        hadNetworkError = true;
-        lastNetworkError = Exception(error.toString());
-      }
-    }
-    if (hadHttpResponse && httpError != null) {
-      throw httpError;
-    }
-    if (hadNetworkError && !hadHttpResponse) {
-      throw Exception(
-        'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
-      );
-    }
-    throw lastNetworkError ?? Exception('Request failed ($path)');
-  }
-
-  Future<http.Response> _patchWithFallback(
-    String path,
-    Object payload, {
-    Map<String, String>? headers,
-  }) async {
-    Exception? httpError;
-    Exception? lastNetworkError;
-    var hadNetworkError = false;
-    var hadHttpResponse = false;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.patch(
-          Uri.parse('$baseUrl$path'),
-          headers: {'Content-Type': 'application/json', ...?headers},
-          body: jsonEncode(payload),
-        );
-        hadHttpResponse = true;
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        httpError ??= Exception(_extractError(response, baseUrl, path));
-      } catch (error) {
-        hadNetworkError = true;
-        lastNetworkError = Exception(error.toString());
-      }
-    }
-    if (hadHttpResponse && httpError != null) {
-      throw httpError;
-    }
-    if (hadNetworkError && !hadHttpResponse) {
-      throw Exception(
-        'Unable to reach backend. Start backend and verify API URL. Tried: ${_baseUrls.join(', ')}',
-      );
-    }
-    throw lastNetworkError ?? Exception('Request failed ($path)');
-  }
-
-  String _extractError(http.Response response, String baseUrl, String path) {
-    try {
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map &&
-          decoded['error'] is Map &&
-          (decoded['error'] as Map)['message'] != null) {
-        return '${(decoded['error'] as Map)['message']} [$baseUrl$path]';
-      }
-    } catch (_) {}
-    return 'Request failed [$baseUrl$path] (${response.statusCode})';
   }
 }

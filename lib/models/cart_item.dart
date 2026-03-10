@@ -2,12 +2,19 @@ import 'food_item.dart';
 
 class CartItem {
   final FoodItem foodItem;
-  int quantity;
+  final int quantity;
 
-  CartItem({
+  const CartItem({
     required this.foodItem,
     this.quantity = 1,
   });
 
   double get totalPrice => foodItem.price * quantity;
+
+  CartItem copyWith({int? quantity}) {
+    return CartItem(
+      foodItem: foodItem,
+      quantity: quantity ?? this.quantity,
+    );
+  }
 }

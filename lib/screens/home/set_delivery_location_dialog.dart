@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter/material.dart';
+
 import '../../models/saved_address.dart';
 import '../../services/address_service.dart';
 
@@ -12,6 +14,7 @@ class DeliveryLocationResult {
   final String? doorFlatNo;
   final String? landmark;
   final String? label;
+  final String? savedAddressId;
   final bool shouldSave;
 
   const DeliveryLocationResult({
@@ -21,6 +24,7 @@ class DeliveryLocationResult {
     this.doorFlatNo,
     this.landmark,
     this.label,
+    this.savedAddressId,
     this.shouldSave = false,
   });
 }
@@ -108,23 +112,36 @@ class _SetDeliveryLocationDialogState extends State<SetDeliveryLocationDialog>
       latitude: widget.latitude,
       longitude: widget.longitude,
       address: widget.resolvedAddress,
+      savedAddressId: null,
       shouldSave: false,
     ));
   }
 
   void _saveAndProceed() {
+    final door = _doorCtrl.text.trim().isEmpty ? null : _doorCtrl.text.trim();
+    final landmark =
+        _landmarkCtrl.text.trim().isEmpty ? null : _landmarkCtrl.text.trim();
+    final parts = <String>[
+      if (door != null) door,
+      if (landmark != null) landmark,
+      widget.resolvedAddress,
+    ];
+    final formattedAddress = parts.join(', ');
+    String? savedAddressId;
+
     final result = DeliveryLocationResult(
       latitude: widget.latitude,
       longitude: widget.longitude,
-      address: widget.resolvedAddress,
-      doorFlatNo: _doorCtrl.text.trim().isEmpty ? null : _doorCtrl.text.trim(),
-      landmark:
-          _landmarkCtrl.text.trim().isEmpty ? null : _landmarkCtrl.text.trim(),
+      address: formattedAddress,
+      doorFlatNo: door,
+      landmark: landmark,
       label: _selectedLabel,
+      savedAddressId: null,
       shouldSave: true,
     );
 
     if (_isEditMode) {
+      savedAddressId = widget.existingAddress!.id;
       final updated = widget.existingAddress!.copyWith(
         address: widget.resolvedAddress,
         latitude: widget.latitude,
@@ -135,8 +152,9 @@ class _SetDeliveryLocationDialogState extends State<SetDeliveryLocationDialog>
       );
       AddressService.instance.updateAddress(updated);
     } else {
+      savedAddressId = DateTime.now().millisecondsSinceEpoch.toString();
       final newAddr = SavedAddress(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: savedAddressId,
         label: _selectedLabel,
         address: widget.resolvedAddress,
         latitude: widget.latitude,
@@ -146,7 +164,18 @@ class _SetDeliveryLocationDialogState extends State<SetDeliveryLocationDialog>
       );
       AddressService.instance.addAddress(newAddr);
     }
-    Navigator.of(context).pop(result);
+    Navigator.of(context).pop(
+      DeliveryLocationResult(
+        latitude: result.latitude,
+        longitude: result.longitude,
+        address: result.address,
+        doorFlatNo: result.doorFlatNo,
+        landmark: result.landmark,
+        label: result.label,
+        savedAddressId: savedAddressId,
+        shouldSave: result.shouldSave,
+      ),
+    );
   }
 
   @override

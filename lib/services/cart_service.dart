@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../data/menu_data.dart';
 import '../models/cart_item.dart';
@@ -24,14 +24,20 @@ class CartService extends ChangeNotifier {
   double get totalAmount => _items.fold(0, (sum, item) => sum + item.totalPrice);
 
   void addItem(FoodItem foodItem) {
-    final existingIndex = _items.indexWhere((item) => item.foodItem.name == foodItem.name);
+    final existingIndex = _items.indexWhere(
+      (item) => item.foodItem.matches(foodItem),
+    );
     
     if (existingIndex >= 0) {
-      _items[existingIndex].quantity++;
+      _items[existingIndex] = _items[existingIndex].copyWith(
+        quantity: _items[existingIndex].quantity + 1,
+      );
     } else {
       _items.add(CartItem(foodItem: foodItem));
     }
-    final quantity = _items.firstWhere((item) => item.foodItem.name == foodItem.name).quantity;
+    final quantity = _items.firstWhere(
+      (item) => item.foodItem.matches(foodItem),
+    ).quantity;
     AnalyticsService().track(
       'add_to_cart',
       params: {
@@ -46,19 +52,23 @@ class CartService extends ChangeNotifier {
   }
 
   void removeItem(FoodItem foodItem) {
-    _items.removeWhere((item) => item.foodItem.name == foodItem.name);
+    _items.removeWhere((item) => item.foodItem.matches(foodItem));
     _persistCart();
     notifyListeners();
   }
 
   void updateQuantity(FoodItem foodItem, int quantity) {
-    final existingIndex = _items.indexWhere((item) => item.foodItem.name == foodItem.name);
+    final existingIndex = _items.indexWhere(
+      (item) => item.foodItem.matches(foodItem),
+    );
     
     if (existingIndex >= 0) {
       if (quantity <= 0) {
         _items.removeAt(existingIndex);
       } else {
-        _items[existingIndex].quantity = quantity;
+        _items[existingIndex] = _items[existingIndex].copyWith(
+          quantity: quantity,
+        );
       }
       _persistCart();
       notifyListeners();

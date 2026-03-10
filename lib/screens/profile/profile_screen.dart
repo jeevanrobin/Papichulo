@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
@@ -10,6 +11,9 @@ import '../../services/auth_service.dart';
 import '../../services/order_api_service.dart';
 import '../auth/auth_sidebar.dart';
 import '../home/set_delivery_location_dialog.dart';
+import 'profile_address_card.dart';
+import 'profile_edit_dialog.dart';
+import 'profile_order_card.dart';
 
 enum _ProfileTab { orders, favourites, payments, addresses, settings }
 
@@ -65,7 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _openEditProfileDialog(AuthUser user) async {
     final updated = await showDialog<bool>(
       context: context,
-      builder: (_) => _EditProfileDialog(user: user),
+      builder: (_) => ProfileEditDialog(user: user),
     );
     if (updated == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -275,7 +279,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _AvatarBadge(name: user.name),
+              ProfileAvatarBadge(name: user.name),
               const SizedBox(width: 16),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -560,7 +564,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 12),
                   itemBuilder: (context, index) {
-                    return _OrderCard(
+                    return ProfileOrderCard(
                       order: orders[index],
                       onReorder: () => _showComingSoon('Reorder'),
                       onHelp: () => _showComingSoon('Order help'),
@@ -579,6 +583,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       listenable: AddressService.instance,
       builder: (context, _) {
         final addresses = AddressService.instance.addresses;
+        final selectedAddressId = AddressService.instance.selectedAddressId;
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -644,9 +649,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Wrap(
                   spacing: 12,
                   runSpacing: 12,
-                  children: addresses.map((addr) {
-                    return _AddressCard(
+                  children: addresses.map<Widget>((addr) {
+                    return ProfileAddressCard(
                       address: addr,
+                      isSelected: addr.id == selectedAddressId,
+                      onSelect: () => _selectAddress(addr),
                       onEdit: () => _editAddress(addr),
                       onDelete: () => _deleteAddress(addr),
                     );
@@ -656,6 +663,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
       },
+    );
+  }
+
+  void _selectAddress(SavedAddress addr) {
+    AddressService.instance.setSelectedAddress(addr.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Delivery address updated.'),
+        duration: Duration(seconds: 2),
+      ),
     );
   }
 
@@ -710,6 +728,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (confirm == true) {
       AddressService.instance.deleteAddress(addr.id);
     }
+  }
+
+  void _selectAddress(SavedAddress addr) {
+    AddressService.instance.setSelectedAddress(addr.id);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${addr.label} set as delivery address'),
+        backgroundColor: Colors.black87,
+      ),
+    );
   }
 
   Widget _buildPlaceholder({
@@ -799,517 +827,3 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-class _EditProfileDialog extends StatefulWidget {
-  final AuthUser user;
-
-  const _EditProfileDialog({required this.user});
-
-  @override
-  State<_EditProfileDialog> createState() => _EditProfileDialogState();
-}
-
-class _EditProfileDialogState extends State<_EditProfileDialog> {
-  static const Color _gold = Color(0xFFF5C842);
-  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nameController;
-  late final TextEditingController _emailController;
-  bool _isSaving = false;
-  String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.user.name);
-    _emailController = TextEditingController(text: widget.user.email ?? '');
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_isSaving) return;
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _isSaving = true;
-      _errorMessage = null;
-    });
-
-    try {
-      await context.read<AuthService>().updateProfile(
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim().isEmpty
-            ? null
-            : _emailController.text.trim(),
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _isSaving = false;
-        _errorMessage = error.toString().replaceFirst('Exception: ', '');
-      });
-    }
-  }
-
-  String? _validateName(String? value) {
-    final name = (value ?? '').trim();
-    if (name.isEmpty) return 'Name is required.';
-    if (name.length < 2) return 'Name must be at least 2 characters.';
-    if (name.length > 80) return 'Name must be at most 80 characters.';
-    return null;
-  }
-
-  String? _validateEmail(String? value) {
-    final email = (value ?? '').trim();
-    if (email.isEmpty) return null;
-    final pattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-    if (!pattern.hasMatch(email)) {
-      return 'Enter a valid email address.';
-    }
-    if (email.length > 120) return 'Email must be at most 120 characters.';
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1D1D1D),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0x33F5C842)),
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Edit Profile',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: _nameController,
-                  enabled: !_isSaving,
-                  textInputAction: TextInputAction.next,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Name',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: _validateName,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _emailController,
-                  enabled: !_isSaving,
-                  keyboardType: TextInputType.emailAddress,
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _save(),
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Email (optional)',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: _validateEmail,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  initialValue: widget.user.phone ?? '',
-                  readOnly: true,
-                  style: TextStyle(color: Colors.grey[400]),
-                  decoration: const InputDecoration(
-                    labelText: 'Phone',
-                    labelStyle: TextStyle(color: Colors.white70),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Colors.redAccent),
-                  ),
-                ],
-                const SizedBox(height: 18),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: _isSaving
-                          ? null
-                          : () => Navigator.of(context).pop(false),
-                      child: const Text(
-                        'Cancel',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: _isSaving ? null : _save,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _gold,
-                        foregroundColor: Colors.black,
-                      ),
-                      child: _isSaving
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.black,
-                              ),
-                            )
-                          : const Text(
-                              'Save',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AvatarBadge extends StatelessWidget {
-  final String name;
-
-  const _AvatarBadge({required this.name});
-
-  @override
-  Widget build(BuildContext context) {
-    final initials = name
-        .split(RegExp(r'\s+'))
-        .where((part) => part.trim().isNotEmpty)
-        .take(2)
-        .map((part) => part[0].toUpperCase())
-        .join();
-    return Container(
-      width: 64,
-      height: 64,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF5C842), Color(0xFFC8900A)],
-        ),
-      ),
-      child: Text(
-        initials.isEmpty ? 'U' : initials,
-        style: const TextStyle(
-          color: Color(0xFF1A1A1A),
-          fontSize: 24,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-}
-
-class _OrderCard extends StatelessWidget {
-  final OrderRecord order;
-  final VoidCallback onReorder;
-  final VoidCallback onHelp;
-
-  const _OrderCard({
-    required this.order,
-    required this.onReorder,
-    required this.onHelp,
-  });
-
-  static const Color _gold = Color(0xFFF5C842);
-  static const Color _border = Color(0x1AFFFFFF);
-
-  @override
-  Widget build(BuildContext context) {
-    final statusColor = _statusColor(order.status);
-    final dateText = _formatDate(context, order.createdAt.toLocal());
-    final itemText = _itemsSummary(order.items);
-    final location = _locationSummary(order.address);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF202020),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _border),
-                ),
-                child: const Icon(Icons.lunch_dining, color: _gold, size: 28),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Papichulo Kitchen',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      location,
-                      style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'ORDER #${order.id} | $dateText',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(99),
-                  border: Border.all(
-                    color: statusColor.withValues(alpha: 0.35),
-                  ),
-                ),
-                child: Text(
-                  _statusLabel(order.status),
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(height: 1, color: _border),
-          const SizedBox(height: 12),
-          Text(
-            '$itemText | Total Paid: Rs ${order.totalAmount.toStringAsFixed(2)}',
-            style: TextStyle(color: Colors.grey[300], fontSize: 13),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilledButton(
-                onPressed: onReorder,
-                style: FilledButton.styleFrom(
-                  backgroundColor: _gold,
-                  foregroundColor: Colors.black,
-                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                child: const Text('REORDER'),
-              ),
-              OutlinedButton(
-                onPressed: onHelp,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.white70,
-                  side: const BorderSide(color: Color(0x33FFFFFF)),
-                ),
-                child: const Text('HELP'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _statusLabel(String status) {
-    switch (status) {
-      case 'new':
-        return 'New';
-      case 'accepted':
-        return 'Accepted';
-      case 'preparing':
-        return 'Preparing';
-      case 'out_for_delivery':
-        return 'Out for delivery';
-      case 'delivered':
-        return 'Delivered';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
-  }
-
-  static Color _statusColor(String status) {
-    return switch (status) {
-      'new' => Colors.orangeAccent,
-      'accepted' => Colors.lightBlueAccent,
-      'preparing' => Colors.deepPurpleAccent,
-      'out_for_delivery' => Colors.amber,
-      'delivered' => Colors.green,
-      'cancelled' => Colors.redAccent,
-      _ => Colors.grey,
-    };
-  }
-
-  static String _itemsSummary(List<OrderLineItem> items) {
-    if (items.isEmpty) return 'Order items';
-    final first = items
-        .take(2)
-        .map((item) {
-          final quantity = item.quantity > 0 ? item.quantity : 1;
-          return '${item.name} x $quantity';
-        })
-        .join(', ');
-    if (items.length <= 2) return first;
-    return '$first +${items.length - 2} more';
-  }
-
-  static String _locationSummary(String address) {
-    final clean = address.trim();
-    if (clean.isEmpty) return 'Delivery location';
-    final parts = clean.split(',');
-    return parts.first.trim().isNotEmpty ? parts.first.trim() : clean;
-  }
-
-  static String _formatDate(BuildContext context, DateTime dateTime) {
-    final localizations = MaterialLocalizations.of(context);
-    final date = localizations.formatMediumDate(dateTime);
-    final time = localizations.formatTimeOfDay(
-      TimeOfDay.fromDateTime(dateTime),
-    );
-    return '$date, $time';
-  }
-}
-
-class _AddressCard extends StatelessWidget {
-  static const Color _gold = Color(0xFFF5C842);
-  static const Color _border = Color(0x1AFFFFFF);
-
-  final SavedAddress address;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  const _AddressCard({
-    required this.address,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  IconData get _labelIcon {
-    switch (address.label.toLowerCase()) {
-      case 'home':
-        return Icons.home_outlined;
-      case 'work':
-        return Icons.work_outline;
-      default:
-        return Icons.location_on_outlined;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 320,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF181818),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row: icon + label + actions
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(_labelIcon, color: _gold, size: 20),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  address.label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: onEdit,
-                icon: Icon(Icons.edit_outlined,
-                    color: _gold.withValues(alpha: 0.7), size: 18),
-                tooltip: 'Edit',
-                constraints: const BoxConstraints(),
-                padding: const EdgeInsets.all(6),
-              ),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline,
-                    color: Colors.redAccent, size: 18),
-                tooltip: 'Delete',
-                constraints: const BoxConstraints(),
-                padding: const EdgeInsets.all(6),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Address text
-          Text(
-            address.fullAddress,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.grey[400], fontSize: 13, height: 1.4),
-          ),
-        ],
-      ),
-    );
-  }
-}

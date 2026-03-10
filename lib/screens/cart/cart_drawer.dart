@@ -9,10 +9,14 @@ import 'package:latlong2/latlong.dart';
 import '../../data/menu_data.dart';
 import '../../models/cart_item.dart';
 import '../../models/delivery_config.dart';
+import '../../models/saved_address.dart';
+import '../../services/address_service.dart';
 import '../../services/analytics_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/cart_service.dart';
 import '../../services/order_alert_service.dart';
 import '../../services/order_api_service.dart';
+import '../home/set_delivery_location_dialog.dart';
 
 class CartDrawer extends StatefulWidget {
   final CartService cartService;
@@ -583,8 +587,16 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     }
 
     final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController();
-    final phoneController = TextEditingController();
+    final authUser = AuthService.instance.user;
+    final normalizedPhone = (authUser?.phone ?? '').replaceAll(
+      RegExp(r'[^0-9]'),
+      '',
+    );
+    final initialPhone = normalizedPhone.length <= 10
+        ? normalizedPhone
+        : normalizedPhone.substring(normalizedPhone.length - 10);
+    final nameController = TextEditingController(text: authUser?.name ?? '');
+    final phoneController = TextEditingController(text: initialPhone);
     final addressController = TextEditingController();
     var paymentMethod = 'COD';
     var isFetchingLocation = false;
@@ -594,6 +606,11 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
     double? selectedLng;
     double? deliveryDistanceKm;
     var withinDeliveryBoundary = false;
+    SavedAddress? selectedSavedAddress =
+        AddressService.instance.selectedAddress ??
+        (AddressService.instance.addresses.isNotEmpty
+            ? AddressService.instance.addresses.first
+            : null);
 
     void applySelectedLocation(
       _LocationResult result, {
@@ -614,11 +631,35 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
           : '$successPrefix Selected location is outside delivery zone.';
     }
 
+    void applySavedAddress(
+      SavedAddress address, {
+      required String successPrefix,
+    }) {
+      selectedSavedAddress = address;
+      AddressService.instance.setSelectedAddress(address.id);
+      applySelectedLocation(
+        _LocationResult(
+          latitude: address.latitude,
+          longitude: address.longitude,
+          label: address.fullAddress,
+        ),
+        successPrefix: successPrefix,
+      );
+    }
+
+    if (selectedSavedAddress != null) {
+      applySavedAddress(
+        selectedSavedAddress!,
+        successPrefix: 'Saved address selected.',
+      );
+    }
+
     showDialog(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final savedAddresses = AddressService.instance.addresses;
             return AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -693,22 +734,119 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                             ? 'Enter full delivery address'
                             : null,
                       ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                final selected =
+                                    await _showSavedAddressSelectorSheet(
+                                      selectedAddressId:
+                                          selectedSavedAddress?.id,
+                                    );
+                                if (!context.mounted || selected == null) {
+                                  return;
+                                }
+                                setDialogState(() {
+                                  applySavedAddress(
+                                    selected,
+                                    successPrefix: 'Saved address selected.',
+                                  );
+                                });
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: goldYellow,
+                                side: BorderSide(
+                                  color: goldYellow.withOpacity(0.4),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                              ),
+                              icon: const Icon(Icons.bookmark_border, size: 16),
+                              label: Text(
+                                savedAddresses.isEmpty
+                                    ? 'No saved address'
+                                    : 'Saved (${savedAddresses.length})',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: () async {
+                              final picked = await _showMapAddressPicker(
+                                deliveryConfig: deliveryConfig,
+                                initialLatitude:
+                                    selectedLat ?? deliveryConfig.storeLatitude,
+                                initialLongitude: selectedLng ??
+                                    deliveryConfig.storeLongitude,
+                              );
+                              if (!context.mounted || picked == null) return;
+
+                              final saveResult =
+                                  await showDialog<DeliveryLocationResult>(
+                                    context: context,
+                                    builder: (_) => SetDeliveryLocationDialog(
+                                      latitude: picked.latitude,
+                                      longitude: picked.longitude,
+                                      resolvedAddress: picked.label,
+                                    ),
+                                  );
+                              if (!context.mounted || saveResult == null) {
+                                return;
+                              }
+
+                              setDialogState(() {
+                                final savedId = saveResult.savedAddressId;
+                                if (savedId != null && savedId.isNotEmpty) {
+                                  final saved = AddressService.instance.getById(
+                                    savedId,
+                                  );
+                                  if (saved != null) {
+                                    applySavedAddress(
+                                      saved,
+                                      successPrefix: 'Address saved.',
+                                    );
+                                    return;
+                                  }
+                                }
+
+                                applySelectedLocation(
+                                  _LocationResult(
+                                    latitude: saveResult.latitude,
+                                    longitude: saveResult.longitude,
+                                    label: saveResult.address,
+                                  ),
+                                  successPrefix: saveResult.shouldSave
+                                      ? 'Address saved.'
+                                      : 'Address selected.',
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.add_location_alt_outlined),
+                            label: const Text('Add New'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: goldYellow,
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
                           Expanded(
                             child: Text(
                               locationStatus.isEmpty
-                                  ? 'Use location or validate typed address.'
+                                  ? 'Pick saved address, map location, or current location.'
                                   : locationStatus,
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
-                                    color:
-                                        locationStatus.startsWith(
-                                          'Location detected',
-                                        )
+                                    color: withinDeliveryBoundary
                                         ? Colors.greenAccent.shade200
-                                        : Colors.grey[400],
+                                        : (deliveryDistanceKm != null
+                                              ? Colors.redAccent.shade100
+                                              : Colors.grey[400]),
                                   ),
                             ),
                           ),
@@ -758,58 +896,6 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                               isFetchingLocation
                                   ? 'Detecting...'
                                   : 'Use location',
-                              style: TextStyle(color: goldYellow),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: isFetchingLocation
-                                ? null
-                                : () async {
-                                    final typedAddress = addressController.text
-                                        .trim();
-                                    if (typedAddress.length < 8) {
-                                      setDialogState(() {
-                                        locationStatus =
-                                            'Enter full address, then validate.';
-                                      });
-                                      return;
-                                    }
-                                    setDialogState(() {
-                                      isFetchingLocation = true;
-                                      locationStatus =
-                                          'Validating typed address...';
-                                    });
-                                    try {
-                                      final geocoded = await _orderApi
-                                          .geocodeAddress(typedAddress);
-                                      final mapped = _LocationResult(
-                                        latitude: geocoded.latitude,
-                                        longitude: geocoded.longitude,
-                                        label: geocoded.label,
-                                      );
-                                      setDialogState(() {
-                                        isFetchingLocation = false;
-                                        applySelectedLocation(
-                                          mapped,
-                                          successPrefix: 'Address validated.',
-                                        );
-                                      });
-                                    } catch (error) {
-                                      setDialogState(() {
-                                        isFetchingLocation = false;
-                                        locationStatus = _friendlyLocationError(
-                                          error,
-                                        );
-                                      });
-                                    }
-                                  },
-                            icon: Icon(
-                              Icons.verified_outlined,
-                              size: 16,
-                              color: goldYellow,
-                            ),
-                            label: Text(
-                              'Validate address',
                               style: TextStyle(color: goldYellow),
                             ),
                           ),
@@ -945,7 +1031,7 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
-                            'Use location or validate typed address first.',
+                            'Pick saved address, map location, or current location first.',
                           ),
                           backgroundColor: Colors.orangeAccent,
                         ),
@@ -1062,6 +1148,196 @@ class _CartDrawerState extends State<CartDrawer> with TickerProviderStateMixin {
         );
       },
     );
+  }
+
+  Future<SavedAddress?> _showSavedAddressSelectorSheet({
+    String? selectedAddressId,
+  }) async {
+    return showModalBottomSheet<SavedAddress>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.72,
+            ),
+            decoration: BoxDecoration(
+              color: darkGrey,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: goldYellow.withOpacity(0.15)),
+            ),
+            child: ListenableBuilder(
+              listenable: AddressService.instance,
+              builder: (context, _) {
+                final addresses = AddressService.instance.addresses;
+                final activeId =
+                    selectedAddressId ?? AddressService.instance.selectedAddressId;
+
+                if (addresses.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.location_off_outlined,
+                          color: goldYellow,
+                          size: 32,
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'No saved addresses',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Tap "Add New" in checkout to save one.',
+                          style: TextStyle(color: Colors.grey[400]),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_outlined,
+                            color: goldYellow,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Select delivery address',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () => Navigator.pop(sheetContext),
+                            icon: const Icon(Icons.close, color: Colors.white70),
+                            tooltip: 'Close',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: Color(0x26FFFFFF)),
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                        itemCount: addresses.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final address = addresses[index];
+                          final isActive = address.id == activeId;
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () {
+                              AddressService.instance.setSelectedAddress(
+                                address.id,
+                              );
+                              Navigator.pop(sheetContext, address);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isActive
+                                      ? goldYellow.withOpacity(0.6)
+                                      : Colors.white12,
+                                ),
+                                color: isActive
+                                    ? goldYellow.withOpacity(0.08)
+                                    : Colors.black26,
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    _addressIconForLabel(address.label),
+                                    color: goldYellow,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          address.label,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          address.fullAddress,
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Colors.grey[300],
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    isActive
+                                        ? Icons.check_circle
+                                        : Icons.circle_outlined,
+                                    color: isActive
+                                        ? goldYellow
+                                        : Colors.white38,
+                                    size: 20,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _addressIconForLabel(String label) {
+    switch (label.toLowerCase()) {
+      case 'home':
+        return Icons.home_outlined;
+      case 'work':
+        return Icons.work_outline;
+      default:
+        return Icons.location_on_outlined;
+    }
   }
 
   Future<_LocationResult?> _showMapAddressPicker({

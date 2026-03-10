@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/saved_address.dart';
@@ -14,6 +14,13 @@ class AddressService extends ChangeNotifier {
 
   List<SavedAddress> _addresses = [];
   List<SavedAddress> get addresses => List.unmodifiable(_addresses);
+  String? _selectedAddressId;
+  String? get selectedAddressId => _selectedAddressId;
+  SavedAddress? get selectedAddress {
+    final id = _selectedAddressId;
+    if (id == null || id.isEmpty) return null;
+    return getById(id);
+  }
 
   bool _loaded = false;
 
@@ -22,20 +29,36 @@ class AddressService extends ChangeNotifier {
     try {
       final raw = platform_storage.readAddresses();
       if (raw != null && raw.isNotEmpty) {
-        final List<dynamic> list = jsonDecode(raw);
-        _addresses =
-            list.map((e) => SavedAddress.fromJson(e as Map<String, dynamic>)).toList();
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          // Backward compatibility with older payload shape.
+          _addresses = decoded
+              .map((e) => SavedAddress.fromJson(e as Map<String, dynamic>))
+              .toList();
+        } else if (decoded is Map<String, dynamic>) {
+          final list = decoded['addresses'];
+          if (list is List) {
+            _addresses = list
+                .map((e) => SavedAddress.fromJson(e as Map<String, dynamic>))
+                .toList();
+          }
+          _selectedAddressId = decoded['selectedAddressId']?.toString();
+        }
       }
     } catch (e) {
       debugPrint('[AddressService] Error loading addresses: $e');
     }
+    _normalizeSelectedAddress();
     _loaded = true;
     notifyListeners();
   }
 
   void _persist() {
     try {
-      final json = jsonEncode(_addresses.map((a) => a.toJson()).toList());
+      final json = jsonEncode({
+        'addresses': _addresses.map((a) => a.toJson()).toList(),
+        'selectedAddressId': _selectedAddressId,
+      });
       platform_storage.writeAddresses(json);
     } catch (e) {
       debugPrint('[AddressService] Error persisting addresses: $e');
@@ -44,6 +67,7 @@ class AddressService extends ChangeNotifier {
 
   void addAddress(SavedAddress address) {
     _addresses.add(address);
+    _selectedAddressId ??= address.id;
     _persist();
     notifyListeners();
   }
@@ -59,8 +83,25 @@ class AddressService extends ChangeNotifier {
 
   void deleteAddress(String id) {
     _addresses.removeWhere((a) => a.id == id);
+    if (_selectedAddressId == id) {
+      _selectedAddressId = _addresses.isEmpty ? null : _addresses.first.id;
+    }
     _persist();
     notifyListeners();
+  }
+
+  void setSelectedAddress(String? id) {
+    if (id == null || id.isEmpty) {
+      _selectedAddressId = null;
+      _persist();
+      notifyListeners();
+      return;
+    }
+    if (_addresses.any((a) => a.id == id)) {
+      _selectedAddressId = id;
+      _persist();
+      notifyListeners();
+    }
   }
 
   SavedAddress? getById(String id) {
@@ -68,6 +109,17 @@ class AddressService extends ChangeNotifier {
       return _addresses.firstWhere((a) => a.id == id);
     } catch (_) {
       return null;
+    }
+  }
+
+  void _normalizeSelectedAddress() {
+    if (_addresses.isEmpty) {
+      _selectedAddressId = null;
+      return;
+    }
+    if (_selectedAddressId == null ||
+        !_addresses.any((a) => a.id == _selectedAddressId)) {
+      _selectedAddressId = _addresses.first.id;
     }
   }
 }

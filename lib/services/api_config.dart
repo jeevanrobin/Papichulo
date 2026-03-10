@@ -9,6 +9,11 @@ class ApiConfig {
     defaultValue: '',
   );
 
+  // Local development endpoints
+  static const String localEmulatorBaseUrl = 'http://10.0.2.2:3001/api';
+  static const String localWebBaseUrl = 'http://localhost:3001/api';
+  static const String localLoopbackBaseUrl = 'http://127.0.0.1:3001/api';
+
   static List<String> candidateBaseUrls() {
     final candidates = <String>[];
 
@@ -20,6 +25,9 @@ class ApiConfig {
     }
 
     addIfMissing(baseUrl);
+    addIfMissing(localEmulatorBaseUrl);
+    addIfMissing(localWebBaseUrl);
+    addIfMissing(localLoopbackBaseUrl);
 
     Uri? uri;
     try {

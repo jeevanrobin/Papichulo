@@ -1,110 +1,17 @@
 import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
+import 'dart:convert';
 import '../models/cart_item.dart';
 import '../models/delivery_config.dart';
 import '../models/order_record.dart';
+import 'api_client.dart';
 import 'api_config.dart';
 import 'auth_service.dart';
 
 class OrderApiService {
-  final http.Client _client;
+  final ApiClient _api;
 
-  OrderApiService({http.Client? client}) : _client = client ?? http.Client();
-
-  List<String> get _baseUrls => ApiConfig.candidateBaseUrls();
-
-  Future<http.Response> _getWithFallback(String path) async {
-    Exception? lastError;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.get(
-          Uri.parse('$baseUrl$path'),
-          headers: {..._authHeaders(), ..._adminHeaders()},
-        );
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        lastError = Exception(_responseError(path, response, baseUrl));
-      } catch (error) {
-        lastError = Exception(error.toString());
-      }
-    }
-    throw lastError ?? Exception('Request failed ($path)');
-  }
-
-  Future<http.Response> _postWithFallback(String path, Object payload) async {
-    Exception? lastError;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.post(
-          Uri.parse('$baseUrl$path'),
-          headers: {
-            'Content-Type': 'application/json',
-            ..._authHeaders(),
-            ..._adminHeaders(),
-          },
-          body: jsonEncode(payload),
-        );
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        lastError = Exception(_responseError(path, response, baseUrl));
-      } catch (error) {
-        lastError = Exception(error.toString());
-      }
-    }
-    throw lastError ?? Exception('Request failed ($path)');
-  }
-
-  Future<http.Response> _putWithFallback(String path, Object payload) async {
-    Exception? lastError;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.put(
-          Uri.parse('$baseUrl$path'),
-          headers: {
-            'Content-Type': 'application/json',
-            ..._authHeaders(),
-            ..._adminHeaders(),
-          },
-          body: jsonEncode(payload),
-        );
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        lastError = Exception(_responseError(path, response, baseUrl));
-      } catch (error) {
-        lastError = Exception(error.toString());
-      }
-    }
-    throw lastError ?? Exception('Request failed ($path)');
-  }
-
-  Future<http.Response> _patchWithFallback(String path, Object payload) async {
-    Exception? lastError;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.patch(
-          Uri.parse('$baseUrl$path'),
-          headers: {
-            'Content-Type': 'application/json',
-            ..._authHeaders(),
-            ..._adminHeaders(),
-          },
-          body: jsonEncode(payload),
-        );
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          return response;
-        }
-        lastError = Exception(_responseError(path, response, baseUrl));
-      } catch (error) {
-        lastError = Exception(error.toString());
-      }
-    }
-    throw lastError ?? Exception('Request failed ($path)');
-  }
+  OrderApiService({ApiClient? apiClient})
+      : _api = apiClient ?? ApiClient();
 
   Map<String, String> _authHeaders() {
     final token = AuthService.instance.authToken;
@@ -117,21 +24,13 @@ class OrderApiService {
     return {'x-admin-key': ApiConfig.adminKey};
   }
 
-  String _responseError(String path, http.Response response, String baseUrl) {
-    try {
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map &&
-          decoded['error'] is Map &&
-          (decoded['error'] as Map)['message'] != null) {
-        final message = (decoded['error'] as Map)['message'].toString();
-        return 'Request failed ($path) [${response.statusCode}] on $baseUrl: $message';
-      }
-    } catch (_) {}
-    return 'Request failed ($path) [${response.statusCode}] on $baseUrl';
-  }
+  Map<String, String> _allHeaders() => {
+        ..._authHeaders(),
+        ..._adminHeaders(),
+      };
 
   Future<List<Map<String, dynamic>>> fetchMenu() async {
-    final response = await _getWithFallback('/menu');
+    final response = await _api.get('/menu', headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is List) {
       return decoded.cast<Map<String, dynamic>>();
@@ -140,7 +39,7 @@ class OrderApiService {
   }
 
   Future<List<Map<String, dynamic>>> fetchAdminMenu() async {
-    final response = await _getWithFallback('/admin/menu');
+    final response = await _api.get('/admin/menu', headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is List) {
       return decoded
@@ -161,16 +60,20 @@ class OrderApiService {
     required double rating,
     required bool available,
   }) async {
-    final response = await _postWithFallback('/admin/menu', {
-      'name': name,
-      'category': category,
-      'type': type,
-      'ingredients': ingredients,
-      'imageUrl': imageUrl,
-      'price': price,
-      'rating': rating,
-      'available': available,
-    });
+    final response = await _api.post(
+      '/admin/menu',
+      {
+        'name': name,
+        'category': category,
+        'type': type,
+        'ingredients': ingredients,
+        'imageUrl': imageUrl,
+        'price': price,
+        'rating': rating,
+        'available': available,
+      },
+      headers: _allHeaders(),
+    );
     final decoded = jsonDecode(response.body);
     if (decoded is Map) {
       return Map<String, dynamic>.from(decoded);
@@ -182,7 +85,8 @@ class OrderApiService {
     required int id,
     Map<String, dynamic> payload = const {},
   }) async {
-    final response = await _putWithFallback('/admin/menu/$id', payload);
+    final response =
+        await _api.put('/admin/menu/$id', payload, headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is Map) {
       return Map<String, dynamic>.from(decoded);
@@ -191,25 +95,7 @@ class OrderApiService {
   }
 
   Future<void> deleteAdminMenuItem(int id) async {
-    Exception? lastError;
-    for (final baseUrl in _baseUrls) {
-      try {
-        final response = await _client.delete(
-          Uri.parse('$baseUrl/admin/menu/$id'),
-          headers: {..._authHeaders(), ..._adminHeaders()},
-        );
-        if (response.statusCode == 204 ||
-            (response.statusCode >= 200 && response.statusCode < 300)) {
-          return;
-        }
-        lastError = Exception(
-          _responseError('/admin/menu/$id', response, baseUrl),
-        );
-      } catch (error) {
-        lastError = Exception(error.toString());
-      }
-    }
-    throw lastError ?? Exception('Request failed (/admin/menu/$id)');
+    await _api.delete('/admin/menu/$id', headers: _allHeaders());
   }
 
   Future<OrderRecord> createOrder({
@@ -241,7 +127,8 @@ class OrderApiService {
       'totalAmount': totalAmount,
     };
 
-    final response = await _postWithFallback('/orders', payload);
+    final response =
+        await _api.post('/orders', payload, headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) {
       return OrderRecord.fromJson(decoded);
@@ -250,7 +137,7 @@ class OrderApiService {
   }
 
   Future<List<OrderRecord>> fetchOrders() async {
-    final response = await _getWithFallback('/orders');
+    final response = await _api.get('/orders', headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is List) {
       return decoded
@@ -261,7 +148,7 @@ class OrderApiService {
   }
 
   Future<List<OrderRecord>> fetchMyOrders() async {
-    final response = await _getWithFallback('/my/orders');
+    final response = await _api.get('/my/orders', headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is List) {
       return decoded
@@ -272,7 +159,8 @@ class OrderApiService {
   }
 
   Future<DeliveryConfig> fetchDeliveryConfig() async {
-    final response = await _getWithFallback('/delivery-config');
+    final response =
+        await _api.get('/delivery-config', headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) {
       return DeliveryConfig.fromJson(decoded);
@@ -285,11 +173,15 @@ class OrderApiService {
     required double storeLongitude,
     required double radiusKm,
   }) async {
-    final response = await _putWithFallback('/delivery-config', {
-      'storeLatitude': storeLatitude,
-      'storeLongitude': storeLongitude,
-      'radiusKm': radiusKm,
-    });
+    final response = await _api.put(
+      '/delivery-config',
+      {
+        'storeLatitude': storeLatitude,
+        'storeLongitude': storeLongitude,
+        'radiusKm': radiusKm,
+      },
+      headers: _allHeaders(),
+    );
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) {
       return DeliveryConfig.fromJson(decoded);
@@ -299,7 +191,8 @@ class OrderApiService {
 
   Future<GeocodeResult> geocodeAddress(String address) async {
     final encoded = Uri.encodeQueryComponent(address);
-    final response = await _getWithFallback('/geocode?address=$encoded');
+    final response =
+        await _api.get('/geocode?address=$encoded', headers: _allHeaders());
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) {
       return GeocodeResult(
@@ -315,8 +208,9 @@ class OrderApiService {
     required double latitude,
     required double longitude,
   }) async {
-    final response = await _getWithFallback(
+    final response = await _api.get(
       '/reverse-geocode?lat=$latitude&lng=$longitude',
+      headers: _allHeaders(),
     );
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) {
@@ -329,7 +223,11 @@ class OrderApiService {
     required String orderId,
     required String status,
   }) async {
-    await _patchWithFallback('/orders/$orderId/status', {'status': status});
+    await _api.patch(
+      '/orders/$orderId/status',
+      {'status': status},
+      headers: _allHeaders(),
+    );
   }
 }
 
