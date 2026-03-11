@@ -7,6 +7,7 @@ import '../../data/menu_data.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/fly_to_cart_button.dart';
 import '../../widgets/animated_cart_icon.dart';
+import '../../services/address_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_api_service.dart';
@@ -16,6 +17,8 @@ import '../auth/auth_sidebar.dart';
 import '../../providers/cart_provider.dart';
 import 'home_footer.dart';
 import 'home_header_widgets.dart';
+import 'location_picker_sheet.dart';
+import '../../models/saved_address.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -38,6 +41,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _cardStagger;
   final Map<int, bool> _hoveredCards = {};
   late GlobalKey _cartIconKey;
+  final AddressService _addressService = AddressService.instance;
+  late final VoidCallback _addressListener;
   final OrderApiService _orderApi = OrderApiService();
   String _headerLocationLabel = 'Detecting location...';
   bool _isHeaderLocationLoading = false;
@@ -99,7 +104,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     ).animate(CurvedAnimation(parent: _cardController, curve: Curves.easeOut));
 
     _startAnimations();
-    _detectHeaderLocation();
+    _addressListener = _handleAddressChange;
+    _addressService.addListener(_addressListener);
+    _initHeaderLocation();
     _scrollController.addListener(() {
       final show = _scrollController.offset > 300;
       if (show != _showScrollTop) setState(() => _showScrollTop = show);
@@ -114,8 +121,41 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _cardController.forward();
   }
 
+  Future<void> _initHeaderLocation() async {
+    await _addressService.loadAddresses();
+    if (!mounted) return;
+    final saved = _addressService.selectedAddress;
+    if (saved != null) {
+      setState(() => _headerLocationLabel = _formatSavedLabel(saved));
+      return;
+    }
+    _detectHeaderLocation();
+  }
+
+  void _handleAddressChange() {
+    if (!mounted) return;
+    final saved = _addressService.selectedAddress;
+    setState(() {
+      _headerLocationLabel =
+          saved != null ? _formatSavedLabel(saved) : 'Set location';
+    });
+  }
+
+  String _formatSavedLabel(SavedAddress address) {
+    final prefix = address.label.isNotEmpty ? '${address.label} - ' : '';
+    return '$prefix${address.address}';
+  }
+
   Future<void> _detectHeaderLocation() async {
     if (_isHeaderLocationLoading) return;
+    if (_addressService.selectedAddress != null) {
+      setState(() {
+        _headerLocationLabel =
+            _formatSavedLabel(_addressService.selectedAddress!);
+        _isHeaderLocationLoading = false;
+      });
+      return;
+    }
     setState(() => _isHeaderLocationLoading = true);
 
     var nextLabel = _headerLocationLabel;
@@ -159,6 +199,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
+  Future<void> _openLocationPicker() async {
+    final result = await showModalBottomSheet<LocationPickerResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const LocationPickerSheet(),
+    );
+    if (!mounted || result == null) return;
+    final saved = result.savedAddressId != null
+        ? _addressService.getById(result.savedAddressId!)
+        : null;
+    setState(() {
+      _headerLocationLabel =
+          saved != null ? _formatSavedLabel(saved) : result.label;
+    });
+  }
+
   @override
   void dispose() {
     _headerController.dispose();
@@ -166,6 +223,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _cardController.dispose();
     _searchController.dispose();
     _scrollController.dispose();
+    _addressService.removeListener(_addressListener);
     super.dispose();
   }
 
@@ -391,7 +449,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         HomeLocationChip(
                           label: _headerLocationLabel,
                           isLoading: _isHeaderLocationLoading,
-                          onTap: _detectHeaderLocation,
+                          onTap: _openLocationPicker,
                         ),
                       ],
                     ],

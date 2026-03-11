@@ -204,6 +204,30 @@ class OrderApiService {
     throw Exception('Invalid geocode response format');
   }
 
+  Future<List<GeocodeResult>> searchLocations(String query) async {
+    final encoded = Uri.encodeQueryComponent(query);
+    final response = await _api.get(
+      '/search-locations?q=$encoded',
+      headers: _allHeaders(),
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return decoded
+          .whereType<Map>()
+          .map((item) => GeocodeResult(
+                latitude: (item['latitude'] as num?)?.toDouble() ?? 0,
+                longitude: (item['longitude'] as num?)?.toDouble() ?? 0,
+                label: (item['label'] ?? '').toString(),
+              ))
+          .where((r) =>
+              r.label.isNotEmpty &&
+              r.latitude != 0 &&
+              r.longitude != 0)
+          .toList();
+    }
+    throw Exception('Invalid location search response format');
+  }
+
   Future<String> reverseGeocode({
     required double latitude,
     required double longitude,

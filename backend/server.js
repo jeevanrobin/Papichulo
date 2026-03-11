@@ -390,6 +390,53 @@ async function reverseGeocode(latitude, longitude) {
   return { label };
 }
 
+async function searchLocations(query) {
+  // Try Google Geocoding (multiple results) when API key is configured.
+  if (googleMapsApiKey) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleMapsApiKey}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const payload = await response.json();
+        if (payload?.status === 'OK' && Array.isArray(payload.results)) {
+          const mapped = payload.results.slice(0, 7).map((result) => ({
+            latitude: Number(result.geometry?.location?.lat),
+            longitude: Number(result.geometry?.location?.lng),
+            label: String(result.formatted_address || query),
+          })).filter((r) => Number.isFinite(r.latitude) && Number.isFinite(r.longitude));
+          if (mapped.length > 0) return mapped;
+        }
+      }
+    } catch (_) {
+      // Fall back to Nominatim below on any error.
+    }
+  }
+
+  // Fallback: OpenStreetMap Nominatim search (no API key needed).
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=7`;
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'papichulo-backend/1.0',
+      Accept: 'application/json',
+    },
+  });
+  if (!response.ok) {
+    throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve location right now.');
+  }
+  const payload = await response.json();
+  if (!Array.isArray(payload) || payload.length === 0) {
+    throw new ApiError(404, 'LOCATION_NOT_FOUND', 'Could not resolve this location.');
+  }
+  return payload
+    .slice(0, 7)
+    .map((item) => ({
+      latitude: Number(item.lat),
+      longitude: Number(item.lon),
+      label: String(item.display_name || query),
+    }))
+    .filter((r) => Number.isFinite(r.latitude) && Number.isFinite(r.longitude));
+}
+
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (allowedOrigins.includes(origin)) return true;
@@ -923,6 +970,16 @@ app.get('/api/geocode', asyncHandler(async (req, res) => {
 
   const first = await geocodeAddress(address);
   res.json(first);
+}));
+
+app.get('/api/search-locations', asyncHandler(async (req, res) => {
+  const query = String(req.query.q || '').trim();
+  if (query.length < 3) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'Search text must be at least 3 characters.');
+  }
+
+  const results = await searchLocations(query);
+  res.json(results);
 }));
 
 app.get('/api/reverse-geocode', asyncHandler(async (req, res) => {
