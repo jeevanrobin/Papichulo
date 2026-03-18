@@ -29,6 +29,9 @@ const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || '';
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || '';
 const twilioFromNumber = process.env.TWILIO_FROM_NUMBER || '';
 const wsAdminClients = new Set();
+const geocodeTimeoutMs = Number(process.env.GEOCODE_TIMEOUT_MS || 6000);
+const geocodeRetries = Math.max(0, Number(process.env.GEOCODE_RETRIES || 1));
+const geocodeCountryBias = String(process.env.GEOCODE_COUNTRY_BIAS || 'in').trim();
 const { requireAdmin, requireAuth } = makeRbacMiddleware({
   jwtSecret,
   allowAdminKey: true,
@@ -313,9 +316,12 @@ async function getDeliveryConfig() {
 }
 
 async function geocodeAddress(address) {
+  const countryComponent = geocodeCountryBias
+    ? `&components=country:${encodeURIComponent(geocodeCountryBias)}`
+    : '';
   if (googleMapsApiKey) {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${googleMapsApiKey}`;
-    const response = await fetch(url);
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${googleMapsApiKey}${countryComponent}`;
+    const response = await fetchWithRetry(url);
     if (!response.ok) {
       throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve address right now.');
     }
@@ -331,8 +337,11 @@ async function geocodeAddress(address) {
     };
   }
 
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
-  const response = await fetch(url, {
+  const countryParam = geocodeCountryBias
+    ? `&countrycodes=${encodeURIComponent(geocodeCountryBias)}`
+    : '';
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}${countryParam}`;
+  const response = await fetchWithRetry(url, {
     headers: {
       'User-Agent': 'papichulo-backend/1.0',
       Accept: 'application/json',
@@ -358,7 +367,7 @@ async function geocodeAddress(address) {
 async function reverseGeocode(latitude, longitude) {
   if (googleMapsApiKey) {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${latitude},${longitude}`)}&key=${googleMapsApiKey}`;
-    const response = await fetch(url);
+    const response = await fetchWithRetry(url);
     if (!response.ok) {
       throw new ApiError(502, 'GEOCODE_UNAVAILABLE', 'Unable to resolve location right now.');
     }
@@ -373,7 +382,7 @@ async function reverseGeocode(latitude, longitude) {
   }
 
   const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`;
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     headers: {
       'User-Agent': 'papichulo-backend/1.0',
       Accept: 'application/json',
@@ -390,12 +399,45 @@ async function reverseGeocode(latitude, longitude) {
   return { label };
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = geocodeTimeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchWithRetry(url, options = {}, timeoutMs = geocodeTimeoutMs, retries = geocodeRetries) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await fetchWithTimeout(url, options, timeoutMs);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries) break;
+      await sleep(150 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
 async function searchLocations(query) {
+  const countryBias = geocodeCountryBias;
+  const countryComponent = countryBias
+    ? `&components=country:${encodeURIComponent(countryBias)}`
+    : '';
+
   // Try Google Geocoding (multiple results) when API key is configured.
   if (googleMapsApiKey) {
     try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleMapsApiKey}`;
-      const response = await fetch(url);
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${googleMapsApiKey}${countryComponent}`;
+      const response = await fetchWithRetry(url);
       if (response.ok) {
         const payload = await response.json();
         if (payload?.status === 'OK' && Array.isArray(payload.results)) {
@@ -413,8 +455,11 @@ async function searchLocations(query) {
   }
 
   // Fallback: OpenStreetMap Nominatim search (no API key needed).
-  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=7`;
-  const response = await fetch(url, {
+  const countryParam = countryBias
+    ? `&countrycodes=${encodeURIComponent(countryBias)}`
+    : '';
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}${countryParam}&limit=7`;
+  const response = await fetchWithRetry(url, {
     headers: {
       'User-Agent': 'papichulo-backend/1.0',
       Accept: 'application/json',
@@ -425,7 +470,7 @@ async function searchLocations(query) {
   }
   const payload = await response.json();
   if (!Array.isArray(payload) || payload.length === 0) {
-    throw new ApiError(404, 'LOCATION_NOT_FOUND', 'Could not resolve this location.');
+    return [];
   }
   return payload
     .slice(0, 7)

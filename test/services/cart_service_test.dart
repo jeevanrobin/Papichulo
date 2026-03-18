@@ -1,13 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:papichulo/models/food_item.dart';
 import 'package:papichulo/services/cart_service.dart';
 
 void main() {
-  setUp(() {
-    SharedPreferences.setMockInitialValues({});
-  });
 
   group('CartService', () {
     final food1 = FoodItem(
@@ -15,8 +10,9 @@ void main() {
       name: 'Burger',
       price: 10.0,
       category: 'Food',
-      description: 'Desc',
-      imageAsset: 'img.png',
+      type: 'Non-Veg',
+      ingredients: [],
+      imagePath: 'img.png',
     );
 
     final food1Duplicate = FoodItem(
@@ -24,8 +20,9 @@ void main() {
       name: 'Burger',
       price: 10.0,
       category: 'Food',
-      description: 'Desc',
-      imageAsset: 'img.png',
+      type: 'Non-Veg',
+      ingredients: [],
+      imagePath: 'img.png',
     );
 
     final food2 = FoodItem(
@@ -33,8 +30,9 @@ void main() {
       name: 'Fries',
       price: 5.0,
       category: 'Sides',
-      description: 'Desc',
-      imageAsset: 'img.png',
+      type: 'Veg',
+      ingredients: [],
+      imagePath: 'img.png',
     );
 
     test('addItem adds item and increments quantity on duplicate matches()', () {

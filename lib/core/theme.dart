@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static const Color goldYellow = Color(0xFFFFD700);
@@ -21,7 +19,7 @@ class AppTheme {
         surface: const Color(0xFF161616),
         onSurface: Colors.white,
       ),
-      fontFamily: GoogleFonts.inter().fontFamily,
+      fontFamily: 'Inter',
       appBarTheme: AppBarTheme(
         backgroundColor: const Color(0xFF0A0A0A),
         foregroundColor: goldYellow,
@@ -46,7 +44,7 @@ class AppTheme {
         surface: Colors.white,
         onSurface: const Color(0xFF1A1A1A),
       ),
-      fontFamily: GoogleFonts.inter().fontFamily,
+      fontFamily: 'Inter',
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.white,
         foregroundColor: darkGold,

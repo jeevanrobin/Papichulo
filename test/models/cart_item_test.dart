@@ -10,8 +10,9 @@ void main() {
       name: 'Test Food',
       price: 15.0,
       category: 'Test',
-      description: 'Desc',
-      imageAsset: 'img.png',
+      type: 'Veg',
+      ingredients: ['A', 'B'],
+      imagePath: 'img.png',
     );
 
     test('totalPrice calculates correctly', () {

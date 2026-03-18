@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../models/saved_address.dart';
 import '../../services/address_service.dart';
@@ -32,6 +34,11 @@ class LocationPickerSheet extends StatefulWidget {
 
 class _LocationPickerSheetState extends State<LocationPickerSheet> {
   static const _gold = Color(0xFFFFD700);
+  static const _bg = Color(0xFF0D0D0D);
+  static const _cardBg = Color(0xFF151515);
+  static const _cardBorder = Color(0x33FFD700);
+  static const _heading = Colors.white;
+  static const _subtle = Color(0xFFB5B5B5);
   final _orderApi = OrderApiService();
   final _searchCtrl = TextEditingController();
   final _debounceMs = 320;
@@ -97,10 +104,16 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
     setState(() => _isDetecting = true);
     try {
       final position = await _getCurrentPosition();
-      final label = await _orderApi.reverseGeocode(
-        latitude: position.latitude,
-        longitude: position.longitude,
-      );
+      String label = '';
+      try {
+        label = await _orderApi.reverseGeocode(
+          latitude: position.latitude,
+          longitude: position.longitude,
+        );
+      } catch (_) {
+        label =
+            'Current location (${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)})';
+      }
       await _confirmAndReturn(
         latitude: position.latitude,
         longitude: position.longitude,
@@ -155,6 +168,173 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
     );
   }
 
+  Future<_PinnedLocation?> _showMapPinDialog({
+    required String seedLabel,
+    required double latitude,
+    required double longitude,
+  }) async {
+    LatLng point = LatLng(latitude, longitude);
+    String displayLabel = seedLabel;
+    bool isResolving = false;
+
+    return showDialog<_PinnedLocation>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            Future<void> resolve(LatLng p) async {
+              setState(() {
+                isResolving = true;
+                displayLabel =
+                    'Selected location (${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)})';
+              });
+              try {
+                final label = await _orderApi.reverseGeocode(
+                  latitude: p.latitude,
+                  longitude: p.longitude,
+                );
+                if (!dialogContext.mounted) return;
+                setState(() {
+                  displayLabel = label.isEmpty
+                      ? 'Selected location (${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)})'
+                      : label;
+                });
+              } catch (_) {
+                setState(() {
+                  displayLabel =
+                      'Selected location (${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)})';
+                });
+              } finally {
+                if (dialogContext.mounted) {
+                  setState(() => isResolving = false);
+                }
+              }
+            }
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF121212),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: const [
+                  Icon(Icons.location_on, color: _gold, size: 22),
+                  SizedBox(width: 8),
+                  Text(
+                    'Fine-tune on map',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 520,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: 320,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: FlutterMap(
+                          options: MapOptions(
+                            initialCenter: point,
+                            initialZoom: 14,
+                            onTap: (_, p) {
+                              point = p;
+                              resolve(p);
+                            },
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'papichulo',
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: point,
+                                  width: 38,
+                                  height: 38,
+                                  child: const Icon(
+                                    Icons.location_on,
+                                    color: _gold,
+                                    size: 34,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            displayLabel,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (isResolving) ...[
+                          const SizedBox(width: 8),
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _gold,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.black,
+                  ),
+                  onPressed: () {
+                    Navigator.pop(
+                      dialogContext,
+                      _PinnedLocation(
+                        latitude: point.latitude,
+                        longitude: point.longitude,
+                        label: displayLabel,
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'Use this location',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<Position> _getCurrentPosition() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
@@ -199,18 +379,36 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
   }
 
   void _selectSuggestion(GeocodeResult result) {
-    _confirmAndReturn(
+    _pickOnMapAndConfirm(
+      seedLabel: result.label,
       latitude: result.latitude,
       longitude: result.longitude,
-      label: result.label,
     );
   }
 
   void _selectRecent(LocationHistoryEntry entry) {
-    _confirmAndReturn(
+    _pickOnMapAndConfirm(
+      seedLabel: entry.label,
       latitude: entry.latitude,
       longitude: entry.longitude,
-      label: entry.label,
+    );
+  }
+
+  Future<void> _pickOnMapAndConfirm({
+    required String seedLabel,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final pinned = await _showMapPinDialog(
+      seedLabel: seedLabel,
+      latitude: latitude,
+      longitude: longitude,
+    );
+    if (pinned == null) return;
+    await _confirmAndReturn(
+      latitude: pinned.latitude,
+      longitude: pinned.longitude,
+      label: pinned.label,
     );
   }
 
@@ -218,13 +416,18 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
   Widget build(BuildContext context) {
     final saved = AddressService.instance.addresses;
 
-    return FractionallySizedBox(
-      heightFactor: 0.9,
+    return Material(
+      color: Colors.transparent,
+      elevation: 12,
+      shadowColor: Colors.black.withOpacity(0.25),
       child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(18),
+          bottom: Radius.circular(18),
+        ),
         child: Container(
-          color: const Color(0xFF0F0F0F),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+          color: _bg,
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
           child: SafeArea(
             top: false,
             child: Column(
@@ -235,15 +438,15 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
                     const Text(
                       'Choose delivery location',
                       style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
+                        color: _heading,
+                        fontSize: 17,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
                     const Spacer(),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: Colors.white70),
+                      icon: const Icon(Icons.close, color: _subtle),
                     ),
                   ],
                 ),
@@ -311,12 +514,12 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
     return TextField(
       controller: _searchCtrl,
       onChanged: _onQueryChanged,
-      style: const TextStyle(color: Colors.white),
+      style: const TextStyle(color: _heading),
       decoration: InputDecoration(
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: _cardBg,
         hintText: 'Search for area, street name...',
-        hintStyle: const TextStyle(color: Colors.white54),
+        hintStyle: const TextStyle(color: _subtle),
         prefixIcon: const Icon(Icons.search, color: _gold),
         suffixIcon: _isSearching
             ? const Padding(
@@ -333,7 +536,7 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
             : (_searchCtrl.text.isEmpty
                 ? null
                 : IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white60),
+                    icon: const Icon(Icons.close, color: _subtle),
                     onPressed: () {
                       _searchCtrl.clear();
                       _onQueryChanged('');
@@ -341,15 +544,15 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
                   )),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
+          borderSide: const BorderSide(color: _cardBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
+          borderSide: const BorderSide(color: _cardBorder),
         ),
-        focusedBorder: const OutlineInputBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
-          borderSide: BorderSide(color: _gold),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+          borderSide: BorderSide(color: _gold.withOpacity(0.9), width: 1.4),
         ),
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
       ),
@@ -359,10 +562,10 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
   Widget _buildDetectRow() {
     return ListTile(
       onTap: _useCurrentLocation,
-      tileColor: Colors.white.withOpacity(0.05),
+      tileColor: _cardBg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       leading: CircleAvatar(
-        backgroundColor: Colors.white.withOpacity(0.08),
+        backgroundColor: _gold.withOpacity(0.12),
         child: _isDetecting
             ? const SizedBox(
                 width: 16,
@@ -374,18 +577,20 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
               )
             : const Icon(Icons.my_location, color: _gold),
       ),
-      title: const Text(
-        'Get current location',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
+        title: const Text(
+          'Get current location',
+          style: TextStyle(
+            color: _heading,
+            fontWeight: FontWeight.w700,
+          ),
         ),
+      subtitle: Text(
+        _isDetecting
+            ? 'Requesting permission...'
+            : 'Using GPS',
+        style: const TextStyle(color: _subtle),
       ),
-      subtitle: const Text(
-        'Using GPS',
-        style: TextStyle(color: Colors.white60),
-      ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.white70),
+      trailing: const Icon(Icons.chevron_right, color: _subtle),
     );
   }
 
@@ -395,7 +600,7 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
       child: Text(
         title,
         style: const TextStyle(
-          color: Colors.white70,
+          color: _heading,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.2,
         ),
@@ -405,8 +610,12 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
 
   Widget _buildSavedTile(SavedAddress address) {
     return Card(
-      color: Colors.white.withOpacity(0.03),
+      color: _cardBg,
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _cardBorder),
+      ),
       child: ListTile(
         onTap: () => _selectSavedAddress(address),
         leading: Icon(
@@ -416,7 +625,7 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
         title: Text(
           address.label,
           style: const TextStyle(
-            color: Colors.white,
+            color: _heading,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -424,17 +633,21 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
           address.address,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Colors.white70),
+          style: const TextStyle(color: _subtle),
         ),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white60),
+        trailing: const Icon(Icons.chevron_right, color: _subtle),
       ),
     );
   }
 
   Widget _buildSuggestionTile(GeocodeResult result) {
     return Card(
-      color: Colors.white.withOpacity(0.03),
+      color: _cardBg,
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _cardBorder),
+      ),
       child: ListTile(
         onTap: () => _selectSuggestion(result),
         leading: const Icon(Icons.place_outlined, color: _gold),
@@ -443,11 +656,11 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Colors.white,
+            color: _heading,
             fontWeight: FontWeight.w700,
           ),
         ),
-        trailing: const Icon(Icons.chevron_right, color: Colors.white60),
+        trailing: const Icon(Icons.chevron_right, color: _subtle),
       ),
     );
   }
@@ -457,8 +670,19 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white38),
+        style: const TextStyle(color: _subtle),
       ),
     );
   }
+}
+
+class _PinnedLocation {
+  final double latitude;
+  final double longitude;
+  final String label;
+  const _PinnedLocation({
+    required this.latitude,
+    required this.longitude,
+    required this.label,
+  });
 }

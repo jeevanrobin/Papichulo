@@ -730,16 +730,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _selectAddress(SavedAddress addr) {
-    AddressService.instance.setSelectedAddress(addr.id);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${addr.label} set as delivery address'),
-        backgroundColor: Colors.black87,
-      ),
-    );
-  }
-
   Widget _buildPlaceholder({
     required IconData icon,
     required String title,

@@ -48,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isHeaderLocationLoading = false;
   static const String _guestDisplayName = 'Guest';
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   bool _showScrollTop = false;
   String _searchQuery = '';
@@ -184,10 +185,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         latitude: position.latitude,
         longitude: position.longitude,
       );
-    } catch (_) {
-      if (_headerLocationLabel == 'Detecting location...') {
-        nextLabel = 'Set location';
+      if (nextLabel.trim().isEmpty) {
+        nextLabel =
+            'Current location (${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)})';
       }
+    } catch (e) {
+      if (_headerLocationLabel == 'Detecting location...') {
+        nextLabel =
+            nextLabel.trim().isEmpty ? 'Set location' : nextLabel;
+      }
+      // Fallback to coordinates when reverse geocode fails.
+      try {
+        final pos = await Geolocator.getCurrentPosition();
+        nextLabel =
+            'Current location (${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)})';
+      } catch (_) {}
     }
 
     if (!mounted) return;
@@ -200,11 +212,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _openLocationPicker() async {
-    final result = await showModalBottomSheet<LocationPickerResult>(
+    final media = MediaQuery.of(context);
+    final result = await showDialog<LocationPickerResult>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const LocationPickerSheet(),
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (_) => Align(
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: media.size.width >= 1280 ? 0.32 : 0.42,
+          heightFactor: 0.92,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: 320,
+              maxWidth: 420,
+            ),
+            child: const LocationPickerSheet(),
+          ),
+        ),
+      ),
     );
     if (!mounted || result == null) return;
     final saved = result.savedAddressId != null
@@ -222,6 +247,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _heroController.dispose();
     _cardController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _scrollController.dispose();
     _addressService.removeListener(_addressListener);
     super.dispose();
@@ -396,56 +422,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final showHeaderLocation = MediaQuery.of(context).size.width >= 1060;
         return Transform.translate(
           offset: Offset(0, _headerSlide.value),
-          child: RepaintBoundary(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF050505), Color(0xFF121212)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                border: Border(
-                  bottom: BorderSide(color: goldYellow.withOpacity(0.18)),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: goldYellow.withOpacity(0.18),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
+      child: RepaintBoundary(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D0D0D),
+            border: Border(
+              bottom: BorderSide(color: goldYellow.withOpacity(0.12)),
+            ),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      TweenAnimationBuilder(
-                        duration: const Duration(milliseconds: 1000),
-                        tween: Tween<double>(begin: 0, end: 1),
-                        builder: (context, value, child) {
-                          return Transform.scale(
-                            scale: value,
-                            child: ShaderMask(
-                              shaderCallback: (bounds) => LinearGradient(
-                                colors: [goldYellow, darkGold],
-                              ).createShader(bounds),
-                              child: const Text(
-                                'PAPICHULO',
-                                style: TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: 2.4,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                      _buildWordmark(),
                       if (showHeaderLocation) ...[
-                        const SizedBox(width: 20),
+                        const SizedBox(width: 18),
                         HomeLocationChip(
                           label: _headerLocationLabel,
                           isLoading: _isHeaderLocationLoading,
@@ -456,67 +449,48 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                   Consumer<AuthService>(
                     builder: (context, auth, _) {
+                      final iconsRow = Row(
+                        children: [
+                          _buildHeaderIcon(Icons.search, onTap: () => _focusSearch()),
+                          const SizedBox(width: 18),
+                          _buildHeaderIcon(Icons.local_offer_outlined, label: 'Offers', onTap: () {}),
+                          const SizedBox(width: 18),
+                          _buildHeaderIcon(Icons.help_outline, label: 'Help', onTap: () {}),
+                          const SizedBox(width: 18),
+                        ],
+                      );
+
                       return Row(
                         children: [
+                          iconsRow,
                           if (!auth.isAuthenticated) ...[
-                            _buildAnimatedNavItem(
-                              'Menu',
-                              () => context.push('/menu'),
-                            ),
-                            const SizedBox(width: 20),
-                            _buildAnimatedNavItem(
-                              'Login',
-                              () => _showAuthDialog(),
-                            ),
-                            const SizedBox(width: 20),
-                            _buildThemeToggle(),
-                            const SizedBox(width: 12),
+                            _buildHeaderTextLink('Menu', () => context.push('/menu')),
+                            const SizedBox(width: 18),
+                            _buildHeaderTextLink('Login', () => _showAuthDialog()),
+                            const SizedBox(width: 18),
                             _buildAnimatedCartIcon(),
                           ] else if (auth.isAdmin) ...[
-                            _buildAnimatedNavItem(
-                              'Dashboard',
-                              () => context.go('/admin/dashboard'),
-                            ),
-                            const SizedBox(width: 20),
-                            _buildAnimatedNavItem(
+                            _buildHeaderTextLink('Dashboard', () => context.go('/admin/dashboard')),
+                            const SizedBox(width: 18),
+                            _buildHeaderTextLink(
                               'Orders',
                               _openAdminOrders,
-                              badgeCountListenable: OrderAlertService
-                                  .instance
-                                  .pendingNewOrderCount,
                             ),
-                            const SizedBox(width: 20),
-                            _buildAnimatedNavItem(
-                              'Menu Management',
-                              () => context.go('/admin/menu'),
-                            ),
-                            const SizedBox(width: 20),
-                            _buildAnimatedNavItem('Logout', () {
-                              _handleProfileMenuSelection(
-                                ProfileMenuAction.logout,
-                              );
-                            }),
-                            const SizedBox(width: 20),
-                            _buildThemeToggle(),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 18),
+                            _buildHeaderTextLink('Menu', () => context.go('/admin/menu')),
+                            const SizedBox(width: 18),
                             _buildAnimatedCartIcon(),
-                            const SizedBox(width: 20),
-                            _buildHeaderCTA(),
-                          ] else ...[
-                            _buildAnimatedNavItem(
-                              'Menu',
-                              () => context.push('/menu'),
-                            ),
-                            const SizedBox(width: 20),
-                            _buildAnimatedNavItem(
-                              'My Orders',
-                              () => context.push('/orders'),
-                            ),
-                            const SizedBox(width: 20),
-                            _buildUserProfileMenu(),
-                            const SizedBox(width: 20),
-                            _buildThemeToggle(),
                             const SizedBox(width: 12),
+                            _buildHeaderTextLink('Logout', () {
+                              _handleProfileMenuSelection(ProfileMenuAction.logout);
+                            }),
+                          ] else ...[
+                            _buildHeaderTextLink('Menu', () => context.push('/menu')),
+                            const SizedBox(width: 18),
+                            _buildHeaderTextLink('My Orders', () => context.push('/orders')),
+                            const SizedBox(width: 18),
+                            _buildUserProfileMenu(),
+                            const SizedBox(width: 18),
                             _buildAnimatedCartIcon(),
                           ],
                         ],
@@ -556,6 +530,79 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return AnimatedCartIcon(
       key: _cartIconKey,
       onCartTap: () => context.read<CartProvider>().openCart(),
+    );
+  }
+
+  Widget _buildHeaderIcon(IconData icon, {String? label, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(icon, color: goldYellow, size: 18),
+          if (label != null) ...[
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _focusSearch() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+    );
+    _searchFocusNode.requestFocus();
+  }
+
+  Widget _buildHeaderTextLink(String text, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 15,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWordmark() {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: goldYellow.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.fastfood,
+            color: Colors.white,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 10),
+        const Text(
+          'PAPICHULO',
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            letterSpacing: 1.4,
+          ),
+        ),
+      ],
     );
   }
 
@@ -928,6 +975,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Expanded(
               child: TextField(
                 controller: _searchController,
+                focusNode: _searchFocusNode,
                 onChanged: (value) => setState(() => _searchQuery = value),
                 style: const TextStyle(color: Colors.white),
                 cursorColor: goldYellow,
